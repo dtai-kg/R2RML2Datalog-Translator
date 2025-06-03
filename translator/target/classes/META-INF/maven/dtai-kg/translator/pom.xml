@@ -1,0 +1,54 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>dtai-kg</groupId>
+    <artifactId>translator</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>r2rmldatalog</name>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+    <dependencies>
+        <!-- Apache Jena (core library, not the aggregate pom) -->
+        <dependency>
+            <groupId>org.apache.jena</groupId>
+            <artifactId>jena-core</artifactId>
+            <version>4.10.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jena</groupId>
+            <artifactId>jena-arq</artifactId>
+            <version>4.10.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jena</groupId>
+            <artifactId>jena-base</artifactId>
+            <version>4.10.0</version>
+        </dependency>
+
+        <!-- RMLMapper (core RML and dataio) -->
+<dependency>
+    <groupId>be.ugent.rml</groupId>
+    <artifactId>rmlmapper</artifactId>
+    <version>7.0.0</version>
+</dependency>
+
+        <!-- SLF4J (logging, used by RMLMapper) -->
+ <dependency>
+    <groupId>org.slf4j</groupId>
+    <artifactId>slf4j-api</artifactId>
+    <version>2.0.9</version> <!-- Use latest 2.x version -->
+  </dependency>
+
+  <!-- Logback implementation -->
+  <dependency>
+    <groupId>ch.qos.logback</groupId>
+    <artifactId>logback-classic</artifactId>
+    <version>1.4.11</version> <!-- Compatible with SLF4J 2.0.x -->
+  </dependency>
+    </dependencies>
+</project>

@@ -1,7 +1,6 @@
 package translator.r2rml.datalog;
 
 import java.io.InputStream;
-import java.io.Reader;
 import java.io.SequenceInputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -103,28 +102,15 @@ public class Main {
         options.addOption(baseTrueOption);
         CommandLineParser parser = new DefaultParser();
         try {
-            // parse the command line arguments
             CommandLine lineArgs = parser.parse(options, args);
 
-            // Check if config file is given
             Properties configFile = null;
-            if (lineArgs.hasOption("c")) {
-                configFile = new Properties();
-                try (Reader reader = Utils.getReaderFromLocation(lineArgs.getOptionValue("c"))) {
-                    configFile.load(reader);
-                }
-            }
-
             if (checkOptionPresence(helpOption, lineArgs, configFile)) {
                 printHelp(options);
                 return;
             }
 
-//            if (checkOptionPresence(verboseOption, lineArgs, configFile)) {
-//                setLoggerLevel(Level.DEBUG);
-//            } else {
                 setLoggerLevel(Level.ERROR);
-         //   }
 
             String[] mOptionValue = getOptionValues(mappingdocOption, lineArgs, configFile);
             List<InputStream> lis = new ArrayList<>();
@@ -143,7 +129,6 @@ public class Main {
                 }
             }
 
-            // Read mapping file.
             RDF4JStore rmlStore = new RDF4JStore();
             try {
                 rmlStore.read(is, null, RDFFormat.TURTLE);
@@ -175,11 +160,9 @@ public class Main {
                     try (InputStream is2 = new SequenceInputStream(Collections.enumeration(lis))) {
                     	baseIRI = Utils.getBaseDirectiveTurtleOrDefault(is2, defaultBaseIRI);
                     }
-              //  }
             }
 
         } catch (ParseException exp) {
-            // oops, something went wrong
             logger.error("Parsing failed. Reason: {}", exp.getMessage());
             printHelp(options);
         } catch (IllegalArgumentException exp) {
@@ -194,7 +177,7 @@ public class Main {
                 || (option.getLongOpt() != null && lineArgs.hasOption(option.getLongOpt()))
                 || (properties != null
                 && properties.getProperty(option.getLongOpt()) != null
-                && !properties.getProperty(option.getLongOpt()).equals("false"));  // ex: 'help = false' in the config file shouldn't return the help text
+                && !properties.getProperty(option.getLongOpt()).equals("false"));
     }
 
     private static String getPriorityOptionValue(Option option, CommandLine lineArgs, Properties properties) {

@@ -165,3 +165,7 @@ This project is licensed under the [MIT License](LICENSE).
   Herbert Jordan, Bernhard Scholz, Pavle Subotić.  
   In Proceedings of the *Computer Aided Verification (CAV)*, 2016.  
   [https://souffle-lang.github.io/index.html](https://souffle-lang.github.io/index.html)
+
+- **A Declarative Formalization of R2RML Using Datalog and Its Efficient Execution**
+  Ali Elhalawati, Anastasia Dimou, and Jan Van den Bussche.
+  In RuleChallenge@RuleML+RR, 2025.  

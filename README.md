@@ -47,7 +47,7 @@ Powered by [RMLMapper](https://github.com/RMLio/rmlmapper-java) for parsing mapp
 
 1. **Download the JAR**
 
-   Download the latest release of `parser.jar` from the [releases page](https://github.com/your-repo/releases) or build it yourself.
+   Download the latest release of `parser.jar` from the [releases page](https://github.com/dtai-kg/R2RML2Datalog-Translator/releases/tag/v1.0.0) or build it yourself.
 
 2. **Verify Java**
 

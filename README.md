@@ -168,4 +168,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 - **A Declarative Formalization of R2RML Using Datalog and Its Efficient Execution**
   Ali Elhalawati, Anastasia Dimou, and Jan Van den Bussche.
-  In RuleChallenge@RuleML+RR, 2025.  
+  In RuleChallenge@RuleML+RR, 2025. [Paper](https://ceur-ws.org/Vol-4083/paper63.pdf)

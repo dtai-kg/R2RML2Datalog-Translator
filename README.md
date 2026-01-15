@@ -85,13 +85,13 @@ java -jar parser.jar -h
 
 **Translate R2RML with MySQL:**
 
-Consider a relational database with a table 'Student' that has the following data: 
+Consider a relational database with a table `Student` that has the following data: 
 
 | Name   |
 |--------|
 | Venus  |
 
-The following R2RML mapping file 'mapping.ttl' defines how rows from the `Student` table are mapped to RDF triples.
+The following R2RML mapping file `mapping.ttl` defines how rows from the `Student` table are mapped to RDF triples.
 
 ```turtle
 @prefix rr: <http://www.w3.org/ns/r2rml#> .
@@ -121,7 +121,7 @@ java -jar parser.jar -m mapping.ttl -dsn jdbc:mysql://localhost:3306/mydb -u use
 ```
 The result is the following Datalog program and fact files:
 
-# Datalog Program
+**Datalog Program**
 ```souffle
 .functor toIRI(x:symbol):symbol 
 
@@ -168,6 +168,9 @@ triple(s, p, o) :-
 .output triple
 .output quadruple
 ```
+**fact file**
+
+`Venus`
 
 ## Running the Datalog Programs
 

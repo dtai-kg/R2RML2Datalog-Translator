@@ -112,6 +112,7 @@ The following R2RML mapping file 'mapping.ttl' defines how rows from the `Studen
     rr:predicateObjectMap [
         rr:predicateMap [ rr:constant foaf:name ] ;
         rr:objectMap [ rr:column "Name" ] ] .
+```
 
 Running the R2RML2Datalog Translator on this mapping file and the relational data can be done with the following command:
 
@@ -166,6 +167,7 @@ triple(s, p, o) :-
 
 .output triple
 .output quadruple
+```
 
 ## Running the Datalog Programs
 

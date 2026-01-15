@@ -121,7 +121,7 @@ java -jar parser.jar -m mapping.ttl -dsn jdbc:mysql://localhost:3306/mydb -u use
 ```
 The result is the following Datalog program and fact files:
 
-**Datalog Program**
+**Generated Soufflé Datalog Program**
 ```souffle
 .functor toIRI(x:symbol):symbol 
 
@@ -156,7 +156,7 @@ triple(s, p, o) :- Subject0_lt0(s, x0), Predicate00_lt0(p, x0), Object00_lt0(o, 
 .output triple
 .output quadruple
 ```
-**fact file**
+**fact file (`lt0.facts`)**
 
 `Venus`
 

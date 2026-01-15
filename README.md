@@ -12,7 +12,7 @@ Powered by [RMLMapper](https://github.com/RMLio/rmlmapper-java) for parsing mapp
 
 ## Features
 
-- **Input:** R2RML mappings with either relational databases or CSV files
+- **Input:** R2RML mappings and relational databases
 - **Output:** Datalog programs and fact files (Soufflé syntax)
 - **Easy to use:** Simple command-line interface
 - **Integration:** Leverages RMLMapper for robust mapping support
@@ -66,7 +66,7 @@ java -jar parser.jar -m <mappings.ttl> -dsn <jdbc:driver://...> -u <dbuser> -p <
 
 **Parameters:**
 - `-m`: Path to R2RML mappings file
-- `-dsn`: Database connection string (JDBC format)
+- `-dsn`: Database connection string [JDBC format](https://www.marcobehler.com/guides/jdbc) 
 - `-u`: Database username
 - `-p`: Database password
 - `-o`: (Optional) Output directory

@@ -4,7 +4,7 @@
 [![Java](https://img.shields.io/badge/Java-8%2B-blue.svg)](https://www.java.com/en/)
 [![Soufflé](https://img.shields.io/badge/Souffl%C3%A9-Compatible-brightgreen.svg)](https://souffle-lang.github.io/index.html)
 
-A tool for translating [R2RML](https://www.w3.org/TR/r2rml/) mappings and relational data (databases or CSV files) into Datalog programs and fact files in [Soufflé](https://souffle-lang.github.io/index.html) syntax.
+A tool for translating [R2RML](https://www.w3.org/TR/r2rml/) mappings and relational data (databases) into Datalog programs and fact files in [Soufflé](https://souffle-lang.github.io/index.html) syntax.
 
 Powered by [RMLMapper](https://github.com/RMLio/rmlmapper-java) for parsing mappings and data.
 
@@ -61,8 +61,6 @@ Powered by [RMLMapper](https://github.com/RMLio/rmlmapper-java) for parsing mapp
 
 ## Usage
 
-### 1. With Relational Database
-
 ```sh
 java -jar parser.jar -m <mappings.ttl> -dsn <jdbc:driver://...> -u <dbuser> -p <dbpass> -o <output_dir>
 ```
@@ -72,15 +70,6 @@ java -jar parser.jar -m <mappings.ttl> -dsn <jdbc:driver://...> -u <dbuser> -p <
 - `-dsn`: Database connection string (JDBC format)
 - `-u`: Database username
 - `-p`: Database password
-- `-o`: (Optional) Output directory
-
-### 2. With CSV Files
-
-```sh
-java -jar parser.jar -m <mappings.ttl> -o <output_dir>
-```
-
-- `-m`: Path to R2RML mappings file
 - `-o`: (Optional) Output directory
 
 ### 3. Help & CLI Options
@@ -99,13 +88,6 @@ java -jar parser.jar -h
 ```sh
 java -jar parser.jar -m mapping.ttl -dsn jdbc:mysql://localhost:3306/mydb -u user -p pass -o output/
 ```
-
-**Translate R2RML with CSV:**
-```sh
-java -jar parser.jar -m mapping.ttl -o output/
-```
-
----
 
 ## Running the Datalog Programs
 
@@ -131,7 +113,6 @@ Please follow [https://souffle-lang.github.io/execute](https://souffle-lang.gith
 
 - Ensure you have Java 8 or higher installed and accessible in your environment.
 - For database connections, ensure the JDBC driver is available and the connection parameters are correct.
-- For CSV input, check file paths and permissions.
 
 ---
 

@@ -69,7 +69,7 @@ java -jar parser.jar -m <mappings.ttl> -dsn <jdbc:driver://...> -u <dbuser> -p <
 - `-dsn`: Database connection string [JDBC format](https://www.marcobehler.com/guides/jdbc) 
 - `-u`: Database username
 - `-p`: Database password
-- `-o`: (Optional) Output directory
+- `-o`: (Optional) Output file path
 
 ### 3. Help & CLI Options
 
@@ -85,7 +85,7 @@ java -jar parser.jar -h
 
 **Translate R2RML with MySQL:**
 ```sh
-java -jar parser.jar -m mapping.ttl -dsn jdbc:mysql://localhost:3306/mydb -u user -p pass -o output/
+java -jar parser.jar -m mapping.ttl -dsn jdbc:mysql://localhost:3306/mydb -u user -p pass -o outputPath/output.rls
 ```
 
 ## Running the Datalog Programs

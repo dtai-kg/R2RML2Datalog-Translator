@@ -24,7 +24,7 @@ Powered by [RMLMapper](https://github.com/RMLio/rmlmapper-java) for parsing mapp
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
-- [Examples](#examples)
+- [Example](#example)
 - [Command-Line Options](#command-line-options)
 - [Running the Datalog Programs](#running-datalog)
 - [Troubleshooting](#troubleshooting)
@@ -180,10 +180,18 @@ To execute the Datalog programs:
 
 Please follow [https://souffle-lang.github.io/execute](https://souffle-lang.github.io/execute) for more execution options
 
+**Example**
+
+Running the Soufflé Datalog reasoner on our [Example](#example) results in two csv files containing the output RDF triples and quadruples, for our example the output is a single triple:
+
+```ntriples
+<http://example.com/Venus> <http://xmlns.com/foaf/0.1/name> "Venus" .
+```
+
 ## Troubleshooting
 
 - Ensure you have Java 8 or higher installed and accessible in your environment.
-- For database connections, ensure the JDBC driver is available, and the connection parameters are correct.
+- For database connections, please make sure the JDBC driver is available and the connection parameters are correct.
 
 ---
 

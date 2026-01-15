@@ -81,12 +81,91 @@ java -jar parser.jar -h
 
 ---
 
-## Examples
+## Example
 
 **Translate R2RML with MySQL:**
+
+Consider a relational database with a table 'Student' that has the following data: 
+
+| Name   |
+|--------|
+| Venus  |
+
+The following R2RML mapping file 'mapping.ttl' defines how rows from the `Student` table are mapped to RDF triples.
+
+```turtle
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix ex: <http://example.com/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@base <http://example.com/base/> .
+
+<TriplesMap1>
+    a rr:TriplesMap ;
+
+    rr:logicalTable [
+        rr:tableName "Student" ] ;
+
+    rr:subjectMap [
+        rr:template "http://example.com/{Name}" ] ;
+
+    rr:predicateObjectMap [
+        rr:predicateMap [ rr:constant foaf:name ] ;
+        rr:objectMap [ rr:column "Name" ] ] .
+
+Running the R2RML2Datalog Translator on this mapping file and the relational data can be done with the following command:
+
 ```sh
 java -jar parser.jar -m mapping.ttl -dsn jdbc:mysql://localhost:3306/mydb -u user -p pass -o outputPath/output.rls
 ```
+The result is the following Datalog program and fact files:
+
+# Datalog Program
+```souffle
+.functor toIRI(x:symbol):symbol 
+
+.decl lt0(x0:symbol)
+.input lt0
+
+.decl eval_7227202602e14113a2d06e0ac084adcd2_lt0(x0:symbol, y:symbol)
+.decl eval_7227202602e14113a2d06e0ac084adcd4_lt0(x0:symbol, y:symbol)
+.decl eval_7227202602e14113a2d06e0ac084adcd5_lt0(x0:symbol, y:symbol)
+
+.decl Subject0_lt0(x0:symbol, y:symbol)
+.decl Predicate00_lt0(x0:symbol, y:symbol)
+.decl Object00_lt0(x0:symbol, y:symbol)
+
+eval_7227202602e14113a2d06e0ac084adcd2_lt0(
+    cat("http://example.com/", @toIRI(x0)), x0
+) :- lt0(x0).
+
+eval_7227202602e14113a2d06e0ac084adcd4_lt0(
+    "http://xmlns.com/foaf/0.1/name", x0
+) :- lt0(x0).
+
+eval_7227202602e14113a2d06e0ac084adcd5_lt0(
+    x0, x0
+) :- lt0(x0).
+
+Subject0_lt0(cat("<", cat(s, ">")), x0) :-
+    eval_7227202602e14113a2d06e0ac084adcd2_lt0(s, x0).
+
+Predicate00_lt0(cat("<", cat(p, ">")), x0) :-
+    eval_7227202602e14113a2d06e0ac084adcd4_lt0(p, x0).
+
+Object00_lt0(cat("\"", cat(o, "\"")), x0) :-
+    eval_7227202602e14113a2d06e0ac084adcd5_lt0(o, x0).
+
+.decl triple(s:symbol, p:symbol, o:symbol)
+triple(s, p, o) :-
+    Subject0_lt0(s, x0),
+    Predicate00_lt0(p, x0),
+    Object00_lt0(o, x0).
+
+.decl quadruple(s:symbol, p:symbol, o:symbol, g:symbol)
+
+.output triple
+.output quadruple
 
 ## Running the Datalog Programs
 

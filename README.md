@@ -37,9 +37,8 @@ Powered by [RMLMapper](https://github.com/RMLio/rmlmapper-java) for parsing mapp
 ## Requirements
 
 - [Java 8+](https://www.java.com/en/download/)
-- Access to your relational database (if using DB input)
+- Access to your relational database
 - R2RML mapping file(s)
-- Data files (in case of CSV)
 
 ---
 

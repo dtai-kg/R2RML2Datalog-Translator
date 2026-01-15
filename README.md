@@ -157,6 +157,7 @@ triple(s, p, o) :- Subject0_lt0(s, x0), Predicate00_lt0(p, x0), Object00_lt0(o, 
 .output quadruple
 ```
 **fact file (`lt0.facts`)**
+
 `Venus`
 
 **Additional Examples**

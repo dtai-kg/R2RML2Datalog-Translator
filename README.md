@@ -160,6 +160,10 @@ triple(s, p, o) :- Subject0_lt0(s, x0), Predicate00_lt0(p, x0), Object00_lt0(o, 
 
 `Venus`
 
+**Additional Examples**
+
+For more examples, please refer to the [R2RML2Datalog Tests Repository](https://github.com/dtai-kg/R2RML2Datalog-Tests) where we run our prototype on the official R2RML test-cases.
+
 ## Running the Datalog Programs
 
 This repository also includes the necessary user-defined C++ functions required by Soufflé to evaluate the generated Datalog programs and facts. These functions are implemented in the file [`functors.cpp`](functors.cpp).
@@ -182,7 +186,7 @@ Please follow [https://souffle-lang.github.io/execute](https://souffle-lang.gith
 
 **Example**
 
-Running the Soufflé Datalog reasoner on our [Example](#example) results in two csv files containing the output RDF triples and quadruples, for our example the output is a single triple:
+Running the Soufflé Datalog reasoner on the generated Datalog program and fact file from our [Example](#example) results in two csv files containing the output RDF triples and quadruples. For our example, the output is a single triple:
 
 ```ntriples
 <http://example.com/Venus> <http://xmlns.com/foaf/0.1/name> "Venus" .

@@ -162,7 +162,7 @@ triple(s, p, o) :- Subject0_lt0(s, x0), Predicate00_lt0(p, x0), Object00_lt0(o, 
 
 **Additional Examples**
 
-For more examples, please refer to the [R2RML2Datalog Tests Repository](https://github.com/dtai-kg/R2RML2Datalog-Tests) where we run our prototype on the official R2RML test-cases.
+For more examples, please refer to the [R2RML2Datalog Tests](https://github.com/dtai-kg/R2RML2Datalog-Tests) repository, where we run our prototype on the official R2RML test cases.
 
 ## Running the Datalog Programs
 

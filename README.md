@@ -202,7 +202,7 @@ Running the Soufflé Datalog reasoner on the generated Datalog program and fact 
 ## Support & Contact
 
 For any issues, please contact:  
-- Ali Elhalwati: [ali.elhalawati@kuleuven.be](mailto:ali.elhalawati@kuleuven.be)  
+- Ali Elhalawati: [ali.elhalawati@kuleuven.be](mailto:ali.elhalawati@kuleuven.be)  
 - Anastasia Dimou: [anastasia.dimou@kuleuven.be](mailto:anastasia.dimou@kuleuven.be)
 
 ---

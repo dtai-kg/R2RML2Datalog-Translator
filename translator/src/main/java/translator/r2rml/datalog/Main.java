@@ -69,6 +69,10 @@ public class Main {
                 .hasArg()
                 .desc("path to output file (default: stdout)")
                 .build();
+        Option joinNormalizerOption = Option.builder("n")
+                .longOpt("normalize")
+                .desc("Normalize joins for better execution")
+                .build();
         Option helpOption = Option.builder("h")
                 .longOpt("help")
                 .desc("show help info")
@@ -93,6 +97,7 @@ public class Main {
                 .desc("Include base-iri from mapping file or default base")
                 //.hasArg()
                 .build();
+        options.addOption(joinNormalizerOption);
         options.addOption(mappingdocOption);
         options.addOption(outputfileOption);
         options.addOption(helpOption);
@@ -137,18 +142,33 @@ public class Main {
                 logger.error(fatal, "Unable to parse mapping rules as Turtle. Does the file exist and is it valid Turtle?", e);
                 throw new IllegalArgumentException("Unable to parse mapping rules as Turtle. Does the file exist and is it valid Turtle?");
             }
+            
             if (checkOptionPresence(jdbcDSNOption, lineArgs, configFile)&& checkOptionPresence(usernameOption, lineArgs, configFile)&& checkOptionPresence(passwordOption, lineArgs, configFile)) {
             	if (!checkOptionPresence(baseTrueOption, lineArgs, configFile)) {
+            		if (checkOptionPresence(joinNormalizerOption, lineArgs, configFile)) {
+                    	DatalogGenerator.exec_dlog(R2RMLJoinNormalizer.normalizeMappingDocument(getOptionValues(mappingdocOption, lineArgs, configFile)[0]), getOptionValues(jdbcDSNOption, lineArgs, configFile)[0],  getOptionValues(usernameOption, lineArgs, configFile)[0], getOptionValues(passwordOption, lineArgs, configFile)[0],false, getPriorityOptionValue(outputfileOption, lineArgs, configFile));
+                    }else {
             DatalogGenerator.exec_dlog(getOptionValues(mappingdocOption, lineArgs, configFile)[0], getOptionValues(jdbcDSNOption, lineArgs, configFile)[0],  getOptionValues(usernameOption, lineArgs, configFile)[0], getOptionValues(passwordOption, lineArgs, configFile)[0],false, getPriorityOptionValue(outputfileOption, lineArgs, configFile));
-            	}else {
+                    }}else {
+                    	if (checkOptionPresence(joinNormalizerOption, lineArgs, configFile)) {
+                    		DatalogGenerator.exec_dlog(R2RMLJoinNormalizer.normalizeMappingDocument(getOptionValues(mappingdocOption, lineArgs, configFile)[0]), getOptionValues(jdbcDSNOption, lineArgs, configFile)[0],  getOptionValues(usernameOption, lineArgs, configFile)[0], getOptionValues(passwordOption, lineArgs, configFile)[0],true, getPriorityOptionValue(outputfileOption, lineArgs, configFile));	
+                    	}else {
             		DatalogGenerator.exec_dlog(getOptionValues(mappingdocOption, lineArgs, configFile)[0], getOptionValues(jdbcDSNOption, lineArgs, configFile)[0],  getOptionValues(usernameOption, lineArgs, configFile)[0], getOptionValues(passwordOption, lineArgs, configFile)[0],true, getPriorityOptionValue(outputfileOption, lineArgs, configFile));	
             	}
-            }else {
+                    }
+            }
+            else {
             	if (!checkOptionPresence(baseTrueOption, lineArgs, configFile)) {
+            		if (checkOptionPresence(joinNormalizerOption, lineArgs, configFile)) {
+            			DatalogSouffle.exec_dlog(R2RMLJoinNormalizer.normalizeMappingDocument(getOptionValues(mappingdocOption, lineArgs, configFile)[0]),false, getPriorityOptionValue(outputfileOption, lineArgs, configFile));
+            		}else {
                 DatalogSouffle.exec_dlog(getOptionValues(mappingdocOption, lineArgs, configFile)[0],false, getPriorityOptionValue(outputfileOption, lineArgs, configFile));
-            	}else {
+            		}}else {
+            			if (checkOptionPresence(joinNormalizerOption, lineArgs, configFile)) {
+            				DatalogSouffle.exec_dlog(R2RMLJoinNormalizer.normalizeMappingDocument(getOptionValues(mappingdocOption, lineArgs, configFile)[0]),true,getPriorityOptionValue(outputfileOption, lineArgs, configFile));
+            			}else {
             		DatalogSouffle.exec_dlog(getOptionValues(mappingdocOption, lineArgs, configFile)[0],true,getPriorityOptionValue(outputfileOption, lineArgs, configFile));
-            	}
+            			}}
 			}
             String baseIRI = null;
             if (baseIRI == null || baseIRI.isEmpty()) {

@@ -5,6 +5,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -63,6 +66,8 @@ public class DatalogSouffle {
     static  String variables2="";
     static String variablesdec ="";
     static String variablesdec2 ="";
+    static String tablename="";
+    static String tablename2="";
     static final String defaultBaseIRI = "http://example.com/base";
     static String baseIRI="";
     static  HashMap<String,String>donepreds= new HashMap<String,String>();
@@ -74,11 +79,11 @@ public class DatalogSouffle {
 
     public static void exec_dlog(String mappingfiledirectory, boolean base,String output) throws Exception {
    // public static void main(String[] args) throws Exception {
-        //     Properties for user and password. Here the user and password are both 'paulr'
-      //      Properties p = new Properties();
-     //       boolean base=false;
-      //      String output=null;
-    	//    String mappingfiledirectory= "C:\\Users\\aliha\\OneDrive\\Desktop\\r2rml-datalog\\test\\mapping.ttl";
+          //   Properties for user and password. Here the user and password are both 'paulr'
+//            Properties p = new Properties();
+//            boolean base=false;
+//            String output=null;
+//    	    String mappingfiledirectory= "C:\\Users\\aliha\\OneDrive\\Desktop\\r2rml-datalog\\test\\mapping.ttl";
     	LinkedHashSet<String> rules=new LinkedHashSet<String>();
     	     List<String> edbs= new LinkedList<String>();
    	 String mapPath = Utils.getFile(mappingfiledirectory).getParent();//path to the mapping file that needs to be executed
@@ -100,22 +105,30 @@ public class DatalogSouffle {
         MappingFactory f = new MappingFactory(null, baseIRI, StrictMode.BEST_EFFORT);
         File x;
         
-        try {  x = new File(output);}catch (NullPointerException e){
+        try {  
+        	Path filePath = Paths.get(output);
+        	Files.createDirectories(filePath.getParent());
+        	x = new File(output);}catch (NullPointerException e){
          x = new File(mapPath+"/Datalog_rules"+".rs");
         }     
          x.createNewFile();
 
          FileWriter out = new FileWriter(x);
+//         for (Quad q:rmlStore.getQuads(null, null, null, null)) {
+//        	 System.out.println(q.getSubject()+" "+q.getPredicate()+" "+q.getObject());
+//         }
          for (Term a:tms) {
          	Mapping m =f.createMapping(a, rmlStore);
          	List<Record> lr=factory.createRecords(a, rmlStore);
          	List<Term> logicalSources = Utils.getObjectsFromQuads(rmlStore.getQuads(a, new NamedNode(NAMESPACES.RML2 + "logicalSource"), null));
          	Term logicalsoure = logicalSources.get(0);
-         List<String>edbss=	generateEDBs (a,  lr,logicalsoure);
+         	List<Term> table =Utils.getObjectsFromQuads(rmlStore.getQuads(logicalsoure, new NamedNode(NAMESPACES.RML2 + "source"), null));
+         	 tablename = table.get(0).stringValue().replaceAll(".csv", "");
+         List<String>edbss=	generateEDBs (a,  lr,logicalsoure,tablename);
          if (!edbss.isEmpty()) {
         	 File xx;
         	 String path = Utils.getFile(x.getPath()).getParent();
-         	 xx= new File(path+"/lt"+d_count+".facts");
+         	 xx= new File(path+"/"+tablename+"_lt"+d_count+".facts");
             xx.createNewFile();
             FileWriter outt = new FileWriter(xx); 
              for (String s:edbss) {
@@ -143,6 +156,7 @@ public class DatalogSouffle {
           }
           out.flush();
           out.close();
+          System.out.println("✔ Translation completed. Datalog program and facts files are written to: " + Utils.getFile(x.getPath()).getParent());
                   }
          
     public static LinkedHashSet<String> GenerateMapRules(String mapPath,QuadStore qs,Mapping h,List<Record>lr,List<String>edbs,MappingFactory f, RecordsFactory factory,boolean base, Term logicalsource) throws Exception{
@@ -175,7 +189,7 @@ public class DatalogSouffle {
  // }
   return rules;
      }
-    public static List<String> generateEDBs (Term tm, List<Record> lr, Term logicalsource) throws Exception{
+    public static List<String> generateEDBs (Term tm, List<Record> lr, Term logicalsource, String tablename) throws Exception{
      	List<String> EDBs = new LinkedList<String>();
      	String decl="";
      	Boolean found = false;
@@ -189,29 +203,29 @@ public class DatalogSouffle {
      	 	d_count=ls.get(logicalsource);
      	 	found=true;
      	 }
-     	 
      	 if (!found) {
          for (int i=0; i<lr.size();i++) {
          	 CSVRecord rr = (CSVRecord) lr.get(i);
          	 String pred ="";
-         	decl=".decl lt"+d_count+"(";
+         	decl=".decl "+tablename+"_lt"+d_count+"(";
  for (int j=0;j<schema.size()-1;j++) {
- 	decl=decl+"x"+j+":symbol, ";
+ 	decl=decl+schema.get(j).toLowerCase()+":symbol, ";
+ 	
  		pred =pred+rr.get(schema.get(j)).toString().replace("[", "").replace("]", "	");
  	}
- decl=decl+"x"+(schema.size()-1)+":symbol)";
+ decl=decl+schema.get(schema.size()-1).toLowerCase()+":symbol)";
  	pred =pred+rr.get(schema.get(schema.size()-1)).toString().replace("[", "").replace("]", "	");
  EDBs.add(pred);
          }
   int temp=d_count;
   ls.put(logicalsource, temp);
   declarations.add(decl);
-  declarations.add(".input lt"+d_count);
+  declarations.add(".input "+tablename+"_lt"+d_count);
      	 }
  		return EDBs;
      }
      
-     public static List<String> generateEDBs2 (Term tm, List<Record> lr, Term logicalsource) throws Exception{
+     public static List<String> generateEDBs2 (Term tm, List<Record> lr, Term logicalsource, String tablename) throws Exception{
      	List<String> EDBs = new LinkedList<String>();
      	 Set<String>s = ((CSVRecord) lr.get(0)).getData().keySet();
      	String decl="";
@@ -231,19 +245,19 @@ public class DatalogSouffle {
    	 if (!found) {
          for (int i=0; i<lr.size();i++) {
          	 CSVRecord rr = (CSVRecord) lr.get(0);  	    	        	         
- decl=".decl lt"+jc_count+"(";
+ decl=".decl "+tablename+"_lt"+jc_count+"(";
          	 String pred="";
          	 for (int j=0;j<schema2.size()-1;j++) {
-         			decl=decl+"x"+j+":symbol, ";
+         			decl=decl+schema2.get(j).toLowerCase()+":symbol, ";
          				pred =pred+rr.get(schema2.get(j)).toString().replace("[", "").replace("]", "	");
          		}
-         	 decl=decl+"x"+(schema2.size()-1)+":symbol)";
+         	 decl=decl+schema2.get(schema2.size()-1).toLowerCase()+":symbol)";
          			pred =pred+lr.get(i).get(schema2.get(schema2.size()-1)).toString().replace("[", "").replace("]", "	");
   EDBs.add(pred);
  	 int temp=jc_count;
  	 ls.put(logicalsource, temp);
  	 declarations.add(decl);
- 	 declarations.add(".input lt"+jc_count);
+ 	 declarations.add(".input "+tablename+"_lt"+jc_count);
  	}
 
  }
@@ -253,23 +267,23 @@ public class DatalogSouffle {
       	variables2 ="";
       	variablesdec2 ="";
         	 for (int i=0; i<schema2.size()-1;i++) {
-        		 variables2= variables2 + "z"+i+", ";
+        		 variables2= variables2 + schema2.get(i).toLowerCase()+", ";
         		//variablesdec2= variablesdec2 + "z"+i+":symbol, ";
      			 }
-        	 variables2 = variables2+ "z"+""+(schema2.size()-1);
+        	 variables2 = variables2+ schema2.get(schema2.size()-1).toLowerCase();
         	 variablesdec2= "x:symbol";
         	//variablesdec2= variablesdec2 + "z"+(schema2.size()-1)+":symbol";
         	 for (Quad q:qs.getQuads(ff.getTerm(), null, null)) {
            if (q.getPredicate().getValue().contains("template")) {
           	 String temp = generateTemplate2(Utils.parseTemplate(q.getObject().getValue(), false)); 
-               String predicate2=temp+", "+"z"+primary2+")";
+               String predicate2=temp+", "+schema2.get(primary2).toLowerCase()+")";
               term_predicates2.put(ff.getTerm(), predicate2);
          	}
            else if (q.getPredicate().getValue().contains("reference")) {
-          	term_predicates2.put(ff.getTerm(), "z"+schema2.indexOf(q.getObject().getValue())+", "+"z"+primary2+")");   
+          	term_predicates2.put(ff.getTerm(), schema2.get(schema2.indexOf(q.getObject().getValue())).toLowerCase()+", "+schema2.get(primary2).toLowerCase()+")");   
            }
            else if (q.getPredicate().getValue().contains("constant")) {
-          	term_predicates2.put(ff.getTerm(), "\""+q.getObject().getValue().replaceAll("\"", "")+"\""+", "+"z"+primary2+")");
+          	term_predicates2.put(ff.getTerm(), "\""+q.getObject().getValue().replaceAll("\"", "")+"\""+", "+schema2.get(primary2).toLowerCase()+")");
            }
       }
       }
@@ -282,7 +296,7 @@ public class DatalogSouffle {
       		if (e.toString().startsWith("ReferenceExecutor that works with ")) {
       			String a = e.toString().replace("ReferenceExecutor that works with ", "");
       			//vars.add("@toIRI(x"+schema.indexOf(a)+")");
-      			vars.add("x"+schema.indexOf(a));
+      			vars.add(schema.get(schema.indexOf(a)).toLowerCase());
       			
       		}else {
       			vars.add(e.toString());
@@ -320,7 +334,7 @@ public class DatalogSouffle {
       		if (e.toString().startsWith("ReferenceExecutor that works with ")) {
       			String a = e.toString().replace("ReferenceExecutor that works with ", "");
       			//vars.add("@toIRI(z"+schema2.indexOf(a)+")");
-      			vars.add("z"+schema2.indexOf(a));
+      			vars.add(schema2.get(schema2.indexOf(a)).toLowerCase());
       		}else {
       			vars.add(e.toString());
       		}
@@ -353,22 +367,22 @@ public class DatalogSouffle {
       	variables ="";
       	variablesdec="";
         	 for (int i=0; i<schema.size()-1;i++) {
-        		 variables= variables + "x"+i+", ";
+        		 variables= variables + schema.get(i).toLowerCase()+", ";
         		//variablesdec= variablesdec + "x"+i+":symbol, ";
      			 }
-        	 variables = variables+ "x"+""+(schema.size()-1);
+        	 variables = variables+ schema.get(schema.size()-1).toLowerCase();
        	variablesdec= "x:symbol";
         	 for (Quad q:qs.getQuads(ff.getTerm(), null, null)) {
            if (q.getPredicate().getValue().contains("template")) {
           	 String temp = generateTemplate(Utils.parseTemplate(q.getObject().getValue(), false)); 
-               String predicate2=temp+", "+"x"+primary+")";
+               String predicate2=temp+", "+schema.get(primary).toLowerCase()+")";
               term_predicates2.put(ff.getTerm(), predicate2);
          	}
            else if (q.getPredicate().getValue().contains("reference")) {
-          	term_predicates2.put(ff.getTerm(), "x"+schema.indexOf(q.getObject().getValue())+", "+"x"+primary+")");         	  
+          	term_predicates2.put(ff.getTerm(), schema.get(schema.indexOf(q.getObject().getValue()))+", "+schema.get(primary).toLowerCase()+")");         	  
            }
            else if (q.getPredicate().getValue().contains("constant")) {
-          	term_predicates2.put(ff.getTerm(), "\""+q.getObject().getValue().replaceAll("\"", "")+"\""+", "+"x"+primary+")");
+          	term_predicates2.put(ff.getTerm(), "\""+q.getObject().getValue().replaceAll("\"", "")+"\""+", "+schema.get(primary).toLowerCase()+")");
            }else if (q.getPredicate().getValue().contains("graphMap")) {
           	 List <Quad> lq = qs.getQuads(q.getSubject(), q.getPredicate(), null);
      for (Quad qqs: lq) {     	 
@@ -376,7 +390,7 @@ public class DatalogSouffle {
   String gval2=qq.getPredicate().getValue();
   if (gval2.contains("template")) {
   	 String temp = generateTemplate(Utils.parseTemplate(qq.getObject().getValue(), false)); 
-      String predicate2=temp+", "+"x"+primary+")";
+      String predicate2=temp+", "+schema.get(primary).toLowerCase()+")";
      term_predicates2.put(qq.getSubject(), predicate2); 
   	if (!graph_terms.containsKey(q.getSubject())) {
   		LinkedList<Term>a= new LinkedList<Term>();
@@ -394,7 +408,7 @@ public class DatalogSouffle {
   	}else {
   		graph_terms.get(q.getSubject()).add(q.getObject());
   	}
-  	term_predicates2.put(qq.getSubject(), "x"+schema.indexOf(qq.getObject().getValue())+", "+"x"+primary+")");	  
+  	term_predicates2.put(qq.getSubject(), schema.get(schema.indexOf(qq.getObject().getValue())).toLowerCase()+", "+schema.get(primary).toLowerCase()+")");	  
   }
   else if (gval2.contains("constant")&&!(qq.getObject().getValue().equals("http://w3id.org/rml/defaultGraph"))) {
   	if (!graph_terms.containsKey(ff.getTerm())) {
@@ -404,7 +418,7 @@ public class DatalogSouffle {
   	}else {
   		graph_terms.get(q.getSubject()).add(q.getObject());
   	}
-  	term_predicates2.put(qq.getSubject(), "\""+qq.getObject().getValue().replaceAll("\"", "")+"\""+", "+"x"+primary+")");
+  	term_predicates2.put(qq.getSubject(), "\""+qq.getObject().getValue().replaceAll("\"", "")+"\""+", "+schema.get(primary).toLowerCase()+")");
   }
      }
            }
@@ -418,7 +432,7 @@ public class DatalogSouffle {
           	String gval2=qq.getPredicate().getValue();
           	if (gval2.contains("template")) {
           		 String temp = generateTemplate(Utils.parseTemplate(qq.getObject().getValue(), false)); 
-          	    String predicate2=temp+", "+"x"+primary+")";
+          	    String predicate2=temp+", "+schema.get(primary).toLowerCase()+")";
           	  term_predicates2.put(qq.getSubject(), predicate2);
           		if (!graph_terms.containsKey(ff.getTerm())) {
           			LinkedList<Term>a= new LinkedList<Term>();
@@ -436,7 +450,7 @@ public class DatalogSouffle {
           		}else {
           			graph_terms.get(ff.getTerm()).add(qqs.getObject());
           		}
-          		term_predicates2.put(qq.getSubject(), "x"+schema.indexOf(qq.getObject().getValue())+", "+"x"+primary+")");
+          		term_predicates2.put(qq.getSubject(), schema.get(schema.indexOf(qq.getObject().getValue())).toLowerCase()+", "+schema.get(primary).toLowerCase()+")");
           	}
           	else if (gval2.contains("constant")&&!(qq.getObject().getValue().equals("http://w3id.org/rml/defaultGraph"))) {
           		if (!graph_terms.containsKey(ff.getTerm())) {
@@ -446,7 +460,7 @@ public class DatalogSouffle {
           		}else {
           			graph_terms.get(ff.getTerm()).add(qqs.getObject());
           		}
-          		term_predicates2.put(qq.getSubject(), "\""+qq.getObject().getValue().replaceAll("\"", "")+"\""+", "+"x"+primary+")");
+          		term_predicates2.put(qq.getSubject(), "\""+qq.getObject().getValue().replaceAll("\"", "")+"\""+", "+schema.get(primary).toLowerCase()+")");
           	}
           	   } 
           	   }
@@ -489,16 +503,16 @@ public class DatalogSouffle {
        	 if (termtype.equals("http://w3id.org/rml/BlankNode")) {
        		
        		String[]s2= head.split(", ");
-       		 rule2 = "Subject"+l_count+"_"+"lt"+d_count+"("+"cat(\"_:\","+s2[0]+"), "+s2[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+       		 rule2 = "Subject"+l_count+"_"+"lt"+d_count+"("+"cat(\"_:\","+s2[0]+"), "+s2[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
        		subj_map="Subject"+l_count+"_"+"lt"+d_count+"("+"s, "+s2[1];
        		al.add(rule2);
        	} else {
    		String[]s2= head.split(", ");
    		String ma=term_predicates2.get(h.getSubjectMappingInfo().getTerm());
           if (ma.contains("\"https")||ma.contains("\"http")||!base) {
-               rule2 = "Subject"+l_count+"_"+"lt"+d_count+"("+ "cat(\"<\",cat("+s2[0]+",\">\")), "+s2[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+               rule2 = "Subject"+l_count+"_"+"lt"+d_count+"("+ "cat(\"<\",cat("+s2[0]+",\">\")), "+s2[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
           }else {
-              rule2 = "Subject"+l_count+"_"+"lt"+d_count+"("+ "cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+s2[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+              rule2 = "Subject"+l_count+"_"+"lt"+d_count+"("+ "cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+s2[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
           }
    		subj_map="Subject"+l_count+"_"+"lt"+d_count+"("+"s, "+s2[1];
    		al.add(rule2);
@@ -529,9 +543,9 @@ public class DatalogSouffle {
            	declarations.add(dec);
            	String rule2="";
               if (ma.contains("\"https")||ma.contains("\"http")||!base) {
-               rule2 = "Graph"+l_count+""+g_count+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s2[0]+",\">\")), "+s2[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+               rule2 = "Graph"+l_count+""+g_count+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s2[0]+",\">\")), "+s2[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
              }else {
-              rule2 = "Graph"+l_count+""+g_count+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+s2[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+              rule2 = "Graph"+l_count+""+g_count+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+s2[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
              }
        		if (!graph_predicates.containsKey(g)) {
        			LinkedList<String> a = new LinkedList<String>();
@@ -564,9 +578,9 @@ public class DatalogSouffle {
               	String ma=term_predicates2.get(pog.getPredicateMappingInfo().getTerm());
                  String rule2="";
                  if (ma.contains("\"https")||ma.contains("\"http")||!base) {
-                      rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s2[0]+",\">\")), "+s2[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+                      rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s2[0]+",\">\")), "+s2[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
                  }else {
-                     rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+s2[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+                     rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+s2[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
                  }
           		map="Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"p, "+s2[1];
           		al.add(rule2);
@@ -606,9 +620,9 @@ public class DatalogSouffle {
               		String ma=term_predicates2.get(t);
               		String rule22="";
                      if (ma.contains("\"https")||ma.contains("\"http")||!base) {
-                      rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s22[0]+",\">\")), "+s22[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+                      rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s22[0]+",\">\")), "+s22[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
                     }else {
-                     rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s22[0]+"))"+",\">\"), "+s22[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+                     rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s22[0]+"))"+",\">\"), "+s22[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
                     }
               		map=map+", "+"Object"+l_count+""+i+"_"+"lt"+d_count+"("+"o, "+s22[1];
               		doneobjs.put(head2, "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"o, "+s22[1]);
@@ -617,7 +631,7 @@ public class DatalogSouffle {
           	}else if (termTypes.contains(new NamedNode("http://w3id.org/rml/BlankNode"))) {
           		//String head2=term_predicates2.get(t);
       			String[]s22= head2.split(", ");
-          		String rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"_:\","+s22[0]+"), "+s22[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+          		String rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"_:\","+s22[0]+"), "+s22[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
           		map=map+", "+"Object"+l_count+""+i+"_"+"lt"+d_count+"("+"o, "+s22[1];
           		doneobjs.put(head2, "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"o, "+s22[1]);
           		donetermtypes.put(head2, "http://w3id.org/rml/BlankNode");
@@ -629,11 +643,11 @@ public class DatalogSouffle {
           		String rule22="";
           		if (lantag.equals("")) {
           			if (datatypes.containsKey(t)) {
-          					rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"\\\"\",cat("+s22[0]+",\"\\\"\")), \"^^<"+datatypes.get(t)+">\""+"), "+s22[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+          					rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"\\\"\",cat("+s22[0]+",\"\\\"\")), \"^^<"+datatypes.get(t)+">\""+"), "+s22[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
           			}else {
-          		 rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"\\\"\",cat("+s22[0]+",\"\\\"\"))," +s22[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+          		 rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"\\\"\",cat("+s22[0]+",\"\\\"\"))," +s22[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
           			}}else {
-          			rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+ "cat(cat(\"\\\"\",cat("+s22[0]+",\"\\\"\")),\"@"+lantag+"\""+"), "+s22[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+          			rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+ "cat(cat(\"\\\"\",cat("+s22[0]+",\"\\\"\")),\"@"+lantag+"\""+"), "+s22[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
           		}
           		map=map+", "+"Object"+l_count+""+i+"_"+"lt"+d_count+"("+"o, "+s22[1];
           		doneobjs.put(head2, "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"o, "+s22[1]);
@@ -663,9 +677,9 @@ public class DatalogSouffle {
           	String ma=term_predicates2.get(pog.getPredicateMappingInfo().getTerm());
           	String rule2="";
              if (ma.contains("\"https")||ma.contains("\"http")||!base) {
-                  rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s2[0]+",\">\")), "+s2[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+                  rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s2[0]+",\">\")), "+s2[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
              }else {
-                 rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+s2[1]+" :- "+ "lt"+d_count+"("+ variables+").";
+                 rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+s2[1]+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
              }
       		map="Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"p, "+s2[1];
       		al.add(rule2);
@@ -729,7 +743,9 @@ public class DatalogSouffle {
         	if (!pogm.getJoinConditions().isEmpty()) {
         		List<Term> logicalSources = Utils.getObjectsFromQuads(q.getQuads(t, new NamedNode(NAMESPACES.RML2 + "logicalSource"), null));
              	Term logicalsource = logicalSources.get(0);
-               List<String>edbss=	generateEDBs2 (t,  lr,logicalsource);
+             	List<Term> table =Utils.getObjectsFromQuads(q.getQuads(logicalsource, new NamedNode(NAMESPACES.RML2 + "source"), null));
+             	 tablename2 = table.get(0).stringValue().replaceAll(".csv", "");
+               List<String>edbss=	generateEDBs2 (t,  lr,logicalsource,tablename2);
                if (!edbss.isEmpty()) {
               	 File xx;
                	 xx= new File(mapPath+"/lt"+jc_count+".facts");
@@ -755,8 +771,8 @@ public class DatalogSouffle {
         	String dec= ".decl "+"eval_jcp_"+jc.getValue()+"("+"x:symbol"+", "+"y"+schema2.indexOf(parent)+":symbol)";
         	declarations.add(dec1);  
         	declarations.add(dec);  
-    		String rule1= "eval_jcc_"+jc.getValue()+"("+"x"+schema.indexOf(child)+", "+"x"+primary+") :- lt"+l_count+"("+ variables+").";
-    		String rule12= "eval_jcp_"+jc.getValue()+"("+"z"+schema2.indexOf(parent)+", "+"z"+primary2+") :- lt"+jc_count+"("+ variables2+").";
+    		String rule1= "eval_jcc_"+jc.getValue()+"("+schema.get(schema.indexOf(child)).toLowerCase()+", "+schema.get(primary).toLowerCase()+") :-"+tablename+"_lt"+l_count+"("+ variables+").";
+    		String rule12= "eval_jcp_"+jc.getValue()+"("+schema2.get(schema2.indexOf(parent)).toLowerCase()+", "+schema2.get(primary2).toLowerCase()+") :-"+tablename2+"_lt"+jc_count+"("+ variables2+").";
     		join=join+", eval_jcc_"+jc.getValue()+"("+"v"+i+", "+"x"+primary+"), "+"eval_jcp_"+jc.getValue()+"("+"v"+i+", "+"z"+primary2+")";
     		rules.add(rule12);
     		rules.add(rule1);

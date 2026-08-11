@@ -137,7 +137,7 @@ public class DatalogGenerator {
          	List<Term> logicalSources = Utils.getObjectsFromQuads(rmlStore.getQuads(a, new NamedNode(NAMESPACES.RML2 + "logicalSource"), null));
          	Term logicalsource = logicalSources.get(0);
          	List<Term> table =Utils.getObjectsFromQuads(rmlStore.getQuads(logicalsource, new NamedNode(NAMESPACES.RML2 + "iterator"), null));
-         	 tablename = table.get(0).stringValue().replaceAll(" ", "").replaceAll("`", "");
+            tablename = table.get(0).stringValue().replaceAll(" ", "").replaceAll("[`\"]", "");
          	tablename = tablename.replaceAll("[\\r\\n\\t]+", "").trim();
 
          	if (tablename != null && tablename.toLowerCase().contains("select")) {
@@ -253,7 +253,19 @@ public class DatalogGenerator {
      	 }
  		return EDBs;
      }
-     
+
+    private static String resolveColumn(List<String> jdbcColumns, String sqlIdentifier) {
+        String columnName = sqlIdentifier;
+        if (sqlIdentifier.length() >= 2 && sqlIdentifier.startsWith("\"") && sqlIdentifier.endsWith("\"")) {
+            columnName = sqlIdentifier.substring(1, sqlIdentifier.length() - 1);
+        }
+
+        if (!jdbcColumns.contains(columnName)) {
+            throw new IllegalArgumentException("Column not found: " + sqlIdentifier);
+        }
+        return columnName;
+    }
+
      public static List<String> generateEDBs2 (Term tm, List<Record> lr, Term logicalsource, String tablename) throws Exception{
      	List<String> EDBs = new LinkedList<String>();
      	 Set<String>s = ((CSVRecord) lr.get(0)).getData().keySet();
@@ -309,7 +321,7 @@ public class DatalogGenerator {
                term_predicates2.put(ff.getTerm(), predicate2);
           	}
             else if (q.getPredicate().getValue().contains("reference")) {
-           	term_predicates2.put(ff.getTerm(), schema2.get(schema2.indexOf(q.getObject().getValue())).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables2+")");   
+               term_predicates2.put(ff.getTerm(), resolveColumn(schema2, q.getObject().getValue()).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables2+")");
             }
             else if (q.getPredicate().getValue().contains("constant")) {
            	term_predicates2.put(ff.getTerm(), "\""+q.getObject().getValue().replaceAll("\"", "")+"\""+", "+variables2+")");
@@ -325,7 +337,7 @@ public class DatalogGenerator {
        		if (e.toString().startsWith("ReferenceExecutor that works with ")) {
        			String a = e.toString().replace("ReferenceExecutor that works with ", "");
        			//vars.add("@toIRI(x"+schema.indexOf(a)+")");
-       			vars.add(schema.get(schema.indexOf(a)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
+                vars.add(resolveColumn(schema, a).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
        			
        		}else {
        			vars.add(e.toString());
@@ -363,7 +375,7 @@ public class DatalogGenerator {
        		if (e.toString().startsWith("ReferenceExecutor that works with ")) {
        			String a = e.toString().replace("ReferenceExecutor that works with ", "");
        			//vars.add("@toIRI(z"+schema2.indexOf(a)+")");
-       			vars.add(schema2.get(schema2.indexOf(a)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
+                vars.add(resolveColumn(schema2, a).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
        		}else {
        			vars.add(e.toString());
        		}
@@ -409,7 +421,7 @@ public class DatalogGenerator {
                term_predicates2.put(ff.getTerm(), predicate2);
           	}
             else if (q.getPredicate().getValue().contains("reference")) {
-           	term_predicates2.put(ff.getTerm(), schema.get(schema.indexOf(q.getObject().getValue())).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+")");         	  
+               term_predicates2.put(ff.getTerm(), resolveColumn(schema, q.getObject().getValue()).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+")");
             }
             else if (q.getPredicate().getValue().contains("constant")) {
            	term_predicates2.put(ff.getTerm(), "\""+q.getObject().getValue().replaceAll("\"", "")+"\""+", "+variables+")");
@@ -438,7 +450,7 @@ public class DatalogGenerator {
    	}else {
    		graph_terms.get(q.getSubject()).add(q.getObject());
    	}
-   	term_predicates2.put(qq.getSubject(), schema.get(schema.indexOf(qq.getObject().getValue())).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+")");	  
+       term_predicates2.put(qq.getSubject(), resolveColumn(schema, qq.getObject().getValue()).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+")");
    }
    else if (gval2.contains("constant")&&!(qq.getObject().getValue().equals("http://w3id.org/rml/defaultGraph"))) {
    	if (!graph_terms.containsKey(ff.getTerm())) {
@@ -480,7 +492,7 @@ public class DatalogGenerator {
            		}else {
            			graph_terms.get(ff.getTerm()).add(qqs.getObject());
            		}
-           		term_predicates2.put(qq.getSubject(), schema.get(schema.indexOf(qq.getObject().getValue())).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+")");
+                term_predicates2.put(qq.getSubject(), resolveColumn(schema, qq.getObject().getValue()).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+")");
            	}
            	else if (gval2.contains("constant")&&!(qq.getObject().getValue().equals("http://w3id.org/rml/defaultGraph"))) {
            		if (!graph_terms.containsKey(ff.getTerm())) {
@@ -750,7 +762,7 @@ public class DatalogGenerator {
               		try { 
               		//	Quad qqs=qs.getQuad(ff.getTerm(), null,null);
               			Quad qq=qs.getQuad(ff.getTerm(), new NamedNode("http://w3id.org/rml/reference"),null);
-              			String datatype = lr.get(0).getDataType(qq.getObject().getValue());        			
+                    String datatype = lr.get(0).getDataType(resolveColumn(schema, qq.getObject().getValue()));
                      	if (!datatype.equals(null)) {
                   		datatypes.put(pogm.getObjectMappingInfo().getTerm(), datatype);
                   	}
@@ -777,7 +789,7 @@ public class DatalogGenerator {
               	 System.out.println(qq.getSubject()+" "+qq.getPredicate()+" "+qq.getObject());
                 }
          	List<Term> table =Utils.getObjectsFromQuads(q.getQuads(logicalsource, new NamedNode(NAMESPACES.RML2 + "iterator"), null));
-        	 tablename2 = table.get(0).stringValue().replaceAll(" ", "").replaceAll("`", "");
+            tablename2 = table.get(0).stringValue().replaceAll(" ", "").replaceAll("[`\"]", "");
         	tablename2 = tablename2.replaceAll("[\\r\\n\\t]+", "").trim();
 
         	if (tablename2 != null && tablename2.toLowerCase().contains("select")) {
@@ -805,14 +817,16 @@ public class DatalogGenerator {
           		 int i=0;
           		 for (Quad qw: q.getQuads(po, new NamedNode("http://w3id.org/rml/joinCondition"), null)) {
           		 Term jc = qw.getObject();
-          		String parent =q.getQuad(jc, new NamedNode("http://w3id.org/rml/parent"), null).getObject().getValue();
-          		String child =q.getQuad(jc, new NamedNode("http://w3id.org/rml/child"), null).getObject().getValue();
-              	String dec1= ".decl "+"eval_jcc_"+jc.getValue()+"("+variablesdec+", "+"y"+schema.indexOf(child)+":symbol)";
-              	String dec= ".decl "+"eval_jcp_"+jc.getValue()+"("+variablesdec2+", "+"y"+schema2.indexOf(parent)+":symbol)";
-              	declarations.add(dec1);  
-              	declarations.add(dec);  
-          		String rule1= "eval_jcc_"+jc.getValue()+"("+schema.get(schema.indexOf(child)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+") :- "+ tablename+"_lt"+l_count+"("+ variables+").";
-          		String rule12= "eval_jcp_"+jc.getValue()+"("+schema2.get(schema2.indexOf(parent)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables2+") :- "+ tablename2+"_lt"+jc_count+"("+ variables2+").";
+                String parent =q.getQuad(jc, new NamedNode("http://w3id.org/rml/parent"), null).getObject().getValue();
+                String child =q.getQuad(jc, new NamedNode("http://w3id.org/rml/child"), null).getObject().getValue();
+                String childColumn = resolveColumn(schema, child);
+                String parentColumn = resolveColumn(schema2, parent);
+                String dec1= ".decl "+"eval_jcc_"+jc.getValue()+"("+variablesdec+", "+"y"+schema.indexOf(childColumn)+":symbol)";
+                String dec= ".decl "+"eval_jcp_"+jc.getValue()+"("+variablesdec2+", "+"y"+schema2.indexOf(parentColumn)+":symbol)";
+                declarations.add(dec1);
+                declarations.add(dec);
+                String rule1= "eval_jcc_"+jc.getValue()+"("+childColumn.toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+") :- "+ tablename+"_lt"+l_count+"("+ variables+").";
+                String rule12= "eval_jcp_"+jc.getValue()+"("+parentColumn.toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables2+") :- "+ tablename2+"_lt"+jc_count+"("+ variables2+").";
           		join=join+", eval_jcc_"+jc.getValue()+"("+"v"+i+", "+variables+"), "+"eval_jcp_"+jc.getValue()+"("+"v"+i+", "+variables22+")";
           		rules.add(rule12);
           		rules.add(rule1);

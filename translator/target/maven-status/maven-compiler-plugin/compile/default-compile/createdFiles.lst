@@ -1,0 +1,5 @@
+translator/r2rml/datalog/DatalogSouffle.class
+translator/r2rml/datalog/R2RMLJoinNormalizer.class
+translator/r2rml/datalog/DatalogGenerator.class
+translator/r2rml/datalog/Main.class
+translator/r2rml/datalog/R2RMLJoinNormalizer$SQLJoinInfo.class

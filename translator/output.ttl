@@ -1,0 +1,21 @@
+@prefix ex:   <http://example.com/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rr:   <http://www.w3.org/ns/r2rml#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+<http://example.com/base/TriplesMap2>
+        a                      rr:TriplesMap;
+        rr:logicalTable        [ rr:tableName  "Sport" ];
+        rr:predicateObjectMap  [ rr:objectMap     [ rr:column  "Name" ];
+                                 rr:predicateMap  [ rr:constant  rdfs:label ]
+                               ];
+        rr:subjectMap          [ rr:template  "http://example.com/resource/sport_{ID}" ] .
+
+<http://example.com/base/TriplesMap1_Join1>
+        a                      rr:TriplesMap;
+        rr:logicalTable        [ rr:sqlQuery  "SELECT * FROM Student AS child JOIN Sport AS parent ON child.Sport = parent.ID" ];
+        rr:predicateObjectMap  [ rr:objectMap     [ rr:template  "http://example.com/resource/sport_{ID}" ];
+                                 rr:predicateMap  [ rr:constant  <http://example.com/ontology/practises> ]
+                               ];
+        rr:subjectMap          [ rr:template  "http://example.com/resource/student_{ID}" ] .

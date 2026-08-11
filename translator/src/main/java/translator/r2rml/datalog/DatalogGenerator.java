@@ -3,7 +3,9 @@ package translator.r2rml.datalog;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.BufferedWriter;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -81,7 +83,11 @@ public class DatalogGenerator {
     static  HashMap<String,String>donetermtypes= new HashMap<String,String>();
     static  HashMap<String,String>tablesterms= new HashMap<String,String>();
 
-    public static void exec_dlog(String mappingfiledirectory,  String CONNECTION, String username, String password, Boolean base,String output) throws Exception {
+	public static void exec_dlog(String mappingfiledirectory,  String CONNECTION, String username, String password, Boolean base,String output) throws Exception {
+		exec_dlog(mappingfiledirectory, CONNECTION, username, password, base, output, true);
+	}
+
+	public static void exec_dlog(String mappingfiledirectory,  String CONNECTION, String username, String password, Boolean base,String output, boolean emitFacts) throws Exception {
         //String CONNECTION =  "jdbc:mysql://localhost:3306/r2rml";
          //System.out.println(dbClassName);
             // Class.forName(xxx) loads the jdbc classes and
@@ -144,24 +150,26 @@ public class DatalogGenerator {
          	    Matcher matcher = Pattern.compile("(?i)\\bfrom\\b\\s+([A-Za-z_][A-Za-z0-9_$]*)").matcher(tablename);
          	    tablename = matcher.find() ? matcher.group(1) : "query";
          	}
-         	 System.out.println(tablename);
-         List<String>edbss=	generateEDBs (a,  lr,logicalsource,tablename);   
-         if (!edbss.isEmpty()) {
-        	 File xx;
-        	 String path = Utils.getFile(x.getPath()).getParent();
-        	 xx= new File(path+"/"+tablename+"_lt"+d_count+".facts");
-            xx.createNewFile();
-            FileWriter outt = new FileWriter(xx); 
-             for (String s:edbss) {
-             	outt.write(s+"\n");
-             }
-             outt.close();
-         }
+         	 //System.out.println(tablename);
+		 BufferedWriter factsWriter = null;
+		 try {
+		 	if (emitFacts && !ls.containsKey(logicalsource)) {
+		 		String path = Utils.getFile(x.getPath()).getParent();
+		 		File xx = new File(path+"/"+tablename+"_lt"+d_count+".facts");
+		 		xx.createNewFile();
+		 		factsWriter = new BufferedWriter(new FileWriter(xx));
+		 	}
+		 	generateEDBs(a, lr, logicalsource, tablename, emitFacts, factsWriter);
+		 } finally {
+		 	if (factsWriter != null) {
+		 		factsWriter.close();
+		 	}
+		 }
              
 //         for(String s:edbs) {
 //         	System.out.println(s);
 //         }
-  rules.addAll(GenerateMapRules(mapPath,rmlStore, m, lr, edbs, f,factory,base,logicalsource));
+	rules.addAll(GenerateMapRules(mapPath,rmlStore, m, lr, edbs, f,factory,base,logicalsource, emitFacts));
   if (d_count<jc_count) {
 		 d_count=jc_count+1;
 	 }else {
@@ -191,7 +199,7 @@ public class DatalogGenerator {
   System.out.println("✔ Translation completed. Datalog program and facts files are written to: " + Utils.getFile(x.getPath()).getParent());
           }
 
-    public static LinkedHashSet<String> GenerateMapRules(String mapPath,QuadStore qs,Mapping h,List<Record>lr,List<String>edbs,MappingFactory f, RecordsFactory factory,boolean base, Term logicalsource) throws Exception{
+	public static LinkedHashSet<String> GenerateMapRules(String mapPath,QuadStore qs,Mapping h,List<Record>lr,List<String>edbs,MappingFactory f, RecordsFactory factory,boolean base, Term logicalsource, boolean emitFacts) throws Exception{
      	LinkedHashSet<String>rules= new LinkedHashSet<String>();
     	 graph_predicates.clear();
     	 term_predicates2.clear();
@@ -205,7 +213,7 @@ public class DatalogGenerator {
     	datatypes.clear();
   generateSubjectRules (qs,h,lr,edbs,f,base);
   rules.addAll(generatePredicateRules (qs,h,lr,edbs));
-  rules.addAll(generateObjectRules (mapPath,qs,h,f,lr,edbs,factory,base));
+	rules.addAll(generateObjectRules (mapPath,qs,h,f,lr,edbs,factory,base, emitFacts));
   rules.addAll(generateSubjectTermtypeRule(qs,h, f,base,logicalsource));
   rules.addAll(generatePredicateObjectTermtypeRule(qs,h,f,lr,base,logicalsource));
   rules.addAll(generateGraphTermtypeRule(qs,h, f,base));
@@ -221,9 +229,13 @@ public class DatalogGenerator {
  // }
   return rules;
      }
-    public static List<String> generateEDBs (Term tm, List<Record> lr, Term logicalsource, String tablename) throws Exception{
+	public static List<String> generateEDBs (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts) throws Exception{
+	    	return generateEDBs(tm, lr, logicalsource, tablename, emitFacts, null);
+	}
+
+	public static List<String> generateEDBs (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts, BufferedWriter factsWriter) throws Exception{
      	List<String> EDBs = new LinkedList<String>();
-     	String decl="";
+	    	String decl="";
      	Boolean found = false;
      	Set<String>s = ((CSVRecord) lr.get(0)).getData().keySet();
     	 schema= new LinkedList<String>(s);
@@ -233,28 +245,59 @@ public class DatalogGenerator {
      	 	found=true;
      	 }
      	 
-     	 if (!found) {
-         for (int i=0; i<lr.size();i++) {
-         	 CSVRecord rr = (CSVRecord) lr.get(i);
-         	 String pred ="";
-         	decl=".decl "+tablename+"_lt"+d_count+"(";
- for (int j=0;j<schema.size()-1;j++) {
- 	decl=decl+schema.get(j).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+":symbol, ";
- 		pred =pred+rr.get(schema.get(j)).toString().replace("[", "").replace("]", "	");
- 	}
- decl=decl+schema.get(schema.size()-1).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+":symbol)";
- 	pred =pred+rr.get(schema.get(schema.size()-1)).toString().replace("[", "").replace("]", "	");
- EDBs.add(pred);
-         }
+	    	 if (!found) {
+	    		List<String> normalizedSchema = new LinkedList<String>();
+	    		for (String column : schema) {
+	    			normalizedSchema.add(column.toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
+	    		}
+
+	    		StringBuilder declBuilder = new StringBuilder();
+	    		declBuilder.append(".decl ").append(tablename).append("_lt").append(d_count).append("(");
+	    		for (int j = 0; j < normalizedSchema.size(); j++) {
+	    			if (j > 0) {
+	    				declBuilder.append(", ");
+	    			}
+	    			declBuilder.append(normalizedSchema.get(j)).append(":symbol");
+	    		}
+	    		declBuilder.append(")");
+	    		decl = declBuilder.toString();
+
+	    		if (emitFacts) {
+	    			for (int i=0; i<lr.size();i++) {
+	    				CSVRecord rr = (CSVRecord) lr.get(i);
+	    				StringBuilder predBuilder = new StringBuilder();
+	    				for (int j=0; j<schema.size(); j++) {
+	    					predBuilder.append(rr.get(schema.get(j)).toString().replace("[", "").replace("]", "\t"));
+	    				}
+	    				String pred = predBuilder.toString();
+	    				if (factsWriter != null) {
+	    					factsWriter.write(pred);
+	    					factsWriter.newLine();
+	    				} else {
+	    					EDBs.add(pred);
+	    				}
+	    			}
+	    		}
+
   int temp=d_count;
   ls.put(logicalsource, temp);
   declarations.add(decl);
-  declarations.add(".input "+tablename+"_lt"+d_count);
-     	 }
+  if (emitFacts) {
+	declarations.add(".input "+tablename+"_lt"+d_count);
+  }
+	    	 }
  		return EDBs;
      }
      
-     public static List<String> generateEDBs2 (Term tm, List<Record> lr, Term logicalsource, String tablename) throws Exception{
+	public static List<String> generateEDBs2 (Term tm, List<Record> lr, Term logicalsource, String tablename) throws Exception{
+	    	return generateEDBs2(tm, lr, logicalsource, tablename, true, null);
+    }
+
+    public static List<String> generateEDBs2 (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts) throws Exception{
+	    	return generateEDBs2(tm, lr, logicalsource, tablename, emitFacts, null);
+	}
+
+	public static List<String> generateEDBs2 (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts, BufferedWriter factsWriter) throws Exception{
      	List<String> EDBs = new LinkedList<String>();
      	 Set<String>s = ((CSVRecord) lr.get(0)).getData().keySet();
      	String decl="";
@@ -268,26 +311,48 @@ public class DatalogGenerator {
    	 schema2= new LinkedList<String>(s);
  	 //System.out.println(schema2);
    	schema2.remove("key");
-   	 if (!found) {
-         for (int i=0; i<lr.size();i++) {
-         	 CSVRecord rr = (CSVRecord) lr.get(0);  	    	        	         
-         	decl=".decl "+tablename+"_lt"+jc_count+"(";
-         	 String pred="";
-         	 for (int j=0;j<schema2.size()-1;j++) {
-         			decl=decl+schema2.get(j).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+":symbol, ";
-         				pred =pred+rr.get(schema2.get(j)).toString().replace("[", "").replace("]", "	");
-         		}
-         	 decl=decl+schema2.get(schema2.size()-1).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+":symbol)";
-         			pred =pred+lr.get(i).get(schema2.get(schema2.size()-1)).toString().replace("[", "").replace("]", "	");
-  EDBs.add(pred);
- 	 int temp=jc_count;
- 	 ls.put(logicalsource, temp);
- 	 declarations.add(decl);
- 	declarations.add(".input "+tablename+" lt"+jc_count);
- 	}
+	    if (!found) {
+	    	List<String> normalizedSchema = new LinkedList<String>();
+	    	for (String column : schema2) {
+	    		normalizedSchema.add(column.toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
+	    	}
 
- }
- 		return EDBs;
+	    	StringBuilder declBuilder = new StringBuilder();
+	    	declBuilder.append(".decl ").append(tablename).append("_lt").append(jc_count).append("(");
+	    	for (int j = 0; j < normalizedSchema.size(); j++) {
+	    		if (j > 0) {
+	    			declBuilder.append(", ");
+	    		}
+	    		declBuilder.append(normalizedSchema.get(j)).append(":symbol");
+	    	}
+	    	declBuilder.append(")");
+	    	decl = declBuilder.toString();
+
+	    	if (emitFacts) {
+	        for (int i=0; i<lr.size();i++) {
+	        	 CSVRecord rr = (CSVRecord) lr.get(i);
+	        	StringBuilder predBuilder = new StringBuilder();
+	        	 for (int j=0; j<schema2.size(); j++) {
+	        		predBuilder.append(rr.get(schema2.get(j)).toString().replace("[", "").replace("]", "\t"));
+	        	}
+	        	String pred = predBuilder.toString();
+	        	if (factsWriter != null) {
+	        		factsWriter.write(pred);
+	        		factsWriter.newLine();
+	        	} else {
+	        		EDBs.add(pred);
+	        	}
+	        }
+	    	}
+
+	 int temp=jc_count;
+	 ls.put(logicalsource, temp);
+	 declarations.add(decl);
+	if (emitFacts) {
+		declarations.add(".input "+tablename+"_lt"+jc_count);
+	}
+	}
+		return EDBs;
      }
      public static void generateTermrules2 (MappingInfo ff,QuadStore qs,Mapping h,List<Record>lr) throws Exception{
        	variables2 ="";
@@ -739,7 +804,7 @@ public class DatalogGenerator {
      		return rules;
          	
          }
-         public static LinkedHashSet<String> generateObjectRules (String mapPath,QuadStore qs,Mapping h, MappingFactory f,List<Record>lr,List<String>edbs,RecordsFactory factory, boolean base) throws Exception{
+		 public static LinkedHashSet<String> generateObjectRules (String mapPath,QuadStore qs,Mapping h, MappingFactory f,List<Record>lr,List<String>edbs,RecordsFactory factory, boolean base, boolean emitFacts) throws Exception{
           	LinkedHashSet<String> rules = new LinkedHashSet<String>();
           	List<PredicateObjectGraphMapping> l = h.getPredicateObjectGraphMappings();
           	for (PredicateObjectGraphMapping pogm:l) {
@@ -759,13 +824,13 @@ public class DatalogGenerator {
 
           		}
           			catch(NullPointerException e) {
-          				rules.addAll(generateJoinRules(mapPath,pogm, qs, f, edbs, pogm.getParentTriplesMap(), factory,base));
+						rules.addAll(generateJoinRules(mapPath,pogm, qs, f, edbs, pogm.getParentTriplesMap(), factory,base, emitFacts));
           			}
 
           	}
       		return rules;
           }
-     public static LinkedHashSet<String> generateJoinRules(String mapPath,PredicateObjectGraphMapping pogm,QuadStore q, MappingFactory f,List<String>edbs,Term t, RecordsFactory factory, boolean base) throws Exception{
+	public static LinkedHashSet<String> generateJoinRules(String mapPath,PredicateObjectGraphMapping pogm,QuadStore q, MappingFactory f,List<String>edbs,Term t, RecordsFactory factory, boolean base, boolean emitFacts) throws Exception{
      	LinkedHashSet<String>rules= new LinkedHashSet<String>();
      	String join="";
      	Mapping m =f.createMapping(t, q);
@@ -784,18 +849,21 @@ public class DatalogGenerator {
         	    Matcher matcher = Pattern.compile("(?i)\\bfrom\\b\\s+([A-Za-z_][A-Za-z0-9_$]*)").matcher(tablename2);
         	    tablename2 = matcher.find() ? matcher.group(1) : "query";
         	}
-        	 System.out.println(tablename2);
-           List<String>edbss=	generateEDBs2 (t,  lr,logicalsource,tablename2);
-            if (!edbss.isEmpty()) {
-           	 File xx;
-            	 xx= new File(mapPath+"/lt"+jc_count+".facts");
-               xx.createNewFile();
-               FileWriter outt = new FileWriter(xx);
-                for (String s:edbss) {
-                	outt.write(s+"\n");
-                }
-                outt.close();
-            }
+        	 //System.out.println(tablename2);
+		   BufferedWriter joinFactsWriter = null;
+		   try {
+		   	if (emitFacts && !ls.containsKey(logicalsource)) {
+		   		int factsIndex = d_count + 1;
+		   		File xx = new File(mapPath+"/"+tablename2+"_lt"+factsIndex+".facts");
+		   		xx.createNewFile();
+		   		joinFactsWriter = new BufferedWriter(new FileWriter(xx));
+		   	}
+		   	generateEDBs2(t, lr, logicalsource, tablename2, emitFacts, joinFactsWriter);
+		   } finally {
+		   	if (joinFactsWriter != null) {
+		   		joinFactsWriter.close();
+		   	}
+		   }
             generateTermrules2(m.getSubjectMappingInfo(), q, m, lr);
             vars.put(m.getSubjectMappingInfo().getTerm(), variables2);
             generateSubjectTermtypeRule2(q,m, f,base);

@@ -145,7 +145,6 @@ public class DatalogGenerator {
          out.write(".functor  convertBool(x:symbol):symbol \n");
          out.write(".functor  toIntLiteral(x:symbol):symbol \n");
          out.write(".functor  convertDate(x:symbol):symbol \n");
-         out.write(".functor  trimString(x:symbol):symbol \n");
          for (Term a:tms) {
          	Mapping m =f.createMapping(a, rmlStore);
          	 
@@ -781,10 +780,8 @@ public class DatalogGenerator {
             					String convertedValue = applyDataTypeConversion(s22[0], datatypes.get(t));
             					rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"\\\"\",cat("+convertedValue+",\"\\\"\")), \"^^<"+datatypes.get(t)+">\""+"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
             			}else {
-            				// trimString and null-guard only apply to plain column references, not function-call expressions
-            			String plainVal = (s22[0].trim().startsWith("\"") || s22[0].contains("(")) ? s22[0] : "@trimString("+s22[0]+")";
             			String nullGuard = (s22[0].trim().startsWith("\"") || s22[0].contains("(")) ? "" : ", "+s22[0]+" != \"\"";
-            		 rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"\\\"\",cat("+plainVal+",\"\\\"\"))," +variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+")"+nullGuard+".";
+                                rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"\\\"\",cat("+s22[0]+",\"\\\"\"))," +variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+")"+nullGuard+".";
             			}}else {
             			rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+ "cat(cat(\"\\\"\",cat("+s22[0]+",\"\\\"\")),\"@"+lantag+"\""+"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
             		}

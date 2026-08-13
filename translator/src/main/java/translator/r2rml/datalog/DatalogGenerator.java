@@ -7,21 +7,26 @@ import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Scanner;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.apache.jena.base.Sys;
 
@@ -42,6 +47,7 @@ import be.ugent.rml.store.Quad;
 import be.ugent.rml.store.QuadStore;
 import be.ugent.rml.store.QuadStoreFactory;
 import be.ugent.rml.store.RDF4JStore;
+import be.ugent.rml.term.BlankNode;
 import be.ugent.rml.term.NamedNode;
 import be.ugent.rml.term.Term;
 
@@ -83,6 +89,10 @@ public class DatalogGenerator {
     static  HashMap<String,String>donetermtypes= new HashMap<String,String>();
     static  HashMap<String,String>tablesterms= new HashMap<String,String>();
     static boolean baseMode = false;
+    private static String jdbcConnection;
+    private static Properties jdbcProperties;
+    private static final String RR = "http://www.w3.org/ns/r2rml#";
+    private static final String RML = "http://w3id.org/rml/";
 
 	public static void exec_dlog(String mappingfiledirectory,  String CONNECTION, String username, String password, Boolean base,String output) throws Exception {
 		exec_dlog(mappingfiledirectory, CONNECTION, username, password, base, output, true);
@@ -100,6 +110,8 @@ public class DatalogGenerator {
             Properties p = new Properties();
             p.put("user",username);
             p.put("password",password);
+            jdbcConnection = CONNECTION;
+            jdbcProperties = p;
 
     //	    String mappingfiledirectory= "C:\\Users\\aliha\\OneDrive\\Desktop\\rmlmapper-java-master\\r2rml-datalog\\test\\mapping.rml.ttl";
     	LinkedHashSet<String> rules=new LinkedHashSet<String>();
@@ -111,6 +123,7 @@ public class DatalogGenerator {
         baseIRI = Utils.getBaseDirectiveTurtleOrDefault(mappingStream2, defaultBaseIRI);
         // System.out.println(mapPath);
          QuadStore rmlStore = QuadStoreFactory.read(mappingStream);
+         expandShortcuts(rmlStore);
 
          RecordsFactory factory = new RecordsFactory(mapPath,mappingfiledirectory);
          QuadStore outputStore = new RDF4JStore();
@@ -122,7 +135,8 @@ public class DatalogGenerator {
          //String baseIRI = Utils.getBaseDirectiveTurtleOrDefault(mappingStream, defaultBaseIRI);
          MappingConformer mc = new MappingConformer(rmlStore,mappingOptions);
          mc.conform();
-         Executor executor = new Executor(mc.getStore(), factory, outputStore, baseIRI, null);
+         rmlStore = mc.getStore();
+         Executor executor = new Executor(rmlStore, factory, outputStore, baseIRI, null);
         List <Term> tms=executor.getTriplesMaps();
         //System.out.println();
         MappingFactory f = new MappingFactory(null, baseIRI, StrictMode.BEST_EFFORT);
@@ -153,13 +167,10 @@ public class DatalogGenerator {
          	List<Term> logicalSources = Utils.getObjectsFromQuads(rmlStore.getQuads(a, new NamedNode(NAMESPACES.RML2 + "logicalSource"), null));
          	Term logicalsource = logicalSources.get(0);
          	List<Term> table =Utils.getObjectsFromQuads(rmlStore.getQuads(logicalsource, new NamedNode(NAMESPACES.RML2 + "iterator"), null));
-         	 tablename = table.get(0).stringValue().replaceAll(" ", "").replaceAll("`", "");
-         	tablename = tablename.replaceAll("[\\r\\n\\t]+", "").trim();
-
-         	if (tablename != null && tablename.toLowerCase().contains("select")) {
-         	    Matcher matcher = Pattern.compile("(?i)\\bfrom\\b\\s+([A-Za-z_][A-Za-z0-9_$]*)").matcher(tablename);
-         	    tablename = matcher.find() ? matcher.group(1) : "query";
-         	}
+            String logicalTable = table.get(0).stringValue();
+            tablename = relationName(logicalTable);
+            schema = readColumns(logicalTable);
+            validateSubjectIri(rmlStore, m, lr, schema);
          	 //System.out.println(tablename);
 		 BufferedWriter factsWriter = null;
 		 try {
@@ -237,19 +248,119 @@ public class DatalogGenerator {
  // for (String r :rules) {
 // 	 System.out.println(r);
  // }
-  return rules;
-     }
-	public static List<String> generateEDBs (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts) throws Exception{
+	  return rules;
+	     }
+
+	private static void expandShortcuts(QuadStore store) {
+		expandShortcut(store, "predicate", "predicateMap");
+		expandShortcut(store, "object", "objectMap");
+		expandShortcut(store, "graph", "graphMap");
+	}
+
+	private static void expandShortcut(QuadStore store, String shortcut, String termMapProperty) {
+		NamedNode shortcutProperty = new NamedNode(RR + shortcut);
+		NamedNode expandedProperty = new NamedNode(RR + termMapProperty);
+		NamedNode constantProperty = new NamedNode(RR + "constant");
+		List<Quad> shortcuts = new LinkedList<Quad>(store.getQuads(null, shortcutProperty, null, null));
+
+		for (Quad quad : shortcuts) {
+			Term termMap = new BlankNode();
+			store.addQuad(quad.getSubject(), expandedProperty, termMap, quad.getGraph());
+			store.addQuad(termMap, constantProperty, quad.getObject(), quad.getGraph());
+			store.removeQuads(quad);
+		}
+	}
+
+	private static String relationName(String logicalTable) {
+		if (logicalTable.toLowerCase(Locale.ROOT).contains("select")) {
+			return "query";
+		}
+		return logicalTable.replaceAll("[\\s`\"]", "");
+	}
+
+	private static List<String> readColumns(String logicalTable) throws Exception {
+		String sql = logicalTable.toLowerCase(Locale.ROOT).contains("select")
+				? logicalTable
+				: "SELECT * FROM " + logicalTable + " WHERE 1 = 0";
+		List<String> columns = new LinkedList<String>();
+		Set<String> labels = new HashSet<String>();
+
+		try (Connection connection = DriverManager.getConnection(jdbcConnection, jdbcProperties);
+				PreparedStatement statement = connection.prepareStatement(sql)) {
+			statement.setMaxRows(1);
+			try (ResultSet resultSet = statement.executeQuery()) {
+				ResultSetMetaData metadata = resultSet.getMetaData();
+				for (int index = 1; index <= metadata.getColumnCount(); index++) {
+					String label = metadata.getColumnLabel(index);
+					if (!labels.add(label)) {
+						throw new IllegalArgumentException("Duplicate SQL result column: " + label);
+					}
+					columns.add(label);
+				}
+			}
+		}
+		return columns;
+	}
+
+	private static String resolveColumn(List<String> columns, String sqlIdentifier) {
+		boolean delimited = sqlIdentifier.length() >= 2
+				&& sqlIdentifier.startsWith("\"")
+				&& sqlIdentifier.endsWith("\"");
+		String requested = delimited
+				? sqlIdentifier.substring(1, sqlIdentifier.length() - 1).replace("\"\"", "\"")
+				: sqlIdentifier;
+		if (!delimited && jdbcConnection.startsWith("jdbc:postgresql:")) {
+			requested = requested.toLowerCase(Locale.ROOT);
+		}
+
+		for (String column : columns) {
+			if ((delimited && column.equals(requested))
+					|| (!delimited && jdbcConnection.startsWith("jdbc:mysql:")
+							&& column.equalsIgnoreCase(requested))
+					|| (!delimited && column.equals(requested))) {
+				return column;
+			}
+		}
+		throw new IllegalArgumentException("Column not found: " + sqlIdentifier);
+	}
+
+	private static String columnVariable(List<String> columns, String sqlIdentifier) {
+		return normalizeColumn(resolveColumn(columns, sqlIdentifier));
+	}
+
+	private static String normalizeColumn(String column) {
+		String normalized = column.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_");
+		return Character.isDigit(normalized.charAt(0)) ? "column_" + normalized : normalized;
+	}
+
+	private static void validateSubjectIri(QuadStore store, Mapping mapping, List<Record> records, List<String> columns) {
+		Term subjectMap = mapping.getSubjectMappingInfo().getTerm();
+		NamedNode termType = new NamedNode(RML + "termType");
+		if (store.contains(subjectMap, termType, new NamedNode(RML + "BlankNode"))
+				|| store.contains(subjectMap, termType, new NamedNode(RML + "Literal"))) {
+			return;
+		}
+
+		for (Quad quad : store.getQuads(subjectMap, new NamedNode(RML + "reference"), null, null)) {
+			String column = resolveColumn(columns, quad.getObject().getValue());
+			for (Record record : records) {
+				for (Object value : record.get(column)) {
+					if (value != null && !value.toString().isEmpty()) {
+						URI.create(value.toString());
+					}
+				}
+			}
+		}
+	}
+
+		public static List<String> generateEDBs (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts) throws Exception{
 	    	return generateEDBs(tm, lr, logicalsource, tablename, emitFacts, null);
 	}
 
-	public static List<String> generateEDBs (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts, BufferedWriter factsWriter) throws Exception{
-     	List<String> EDBs = new LinkedList<String>();
-	    	String decl="";
-     	Boolean found = false;
-     	Set<String>s = ((CSVRecord) lr.get(0)).getData().keySet();
-    	 schema= new LinkedList<String>(s);
-    	 schema.remove("key");
+		public static List<String> generateEDBs (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts, BufferedWriter factsWriter) throws Exception{
+		List<String> EDBs = new LinkedList<String>();
+		String decl="";
+		Boolean found = false;
      	 if (ls.containsKey(logicalsource)) {
      	 	d_count=ls.get(logicalsource);
      	 	found=true;
@@ -258,7 +369,7 @@ public class DatalogGenerator {
 	    	 if (!found) {
 	    		List<String> normalizedSchema = new LinkedList<String>();
 	    		for (String column : schema) {
-	    			normalizedSchema.add(column.toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
+				normalizedSchema.add(normalizeColumn(column));
 	    		}
 
 	    		StringBuilder declBuilder = new StringBuilder();
@@ -307,10 +418,9 @@ public class DatalogGenerator {
 	    	return generateEDBs2(tm, lr, logicalsource, tablename, emitFacts, null);
 	}
 
-	public static List<String> generateEDBs2 (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts, BufferedWriter factsWriter) throws Exception{
-     	List<String> EDBs = new LinkedList<String>();
-     	 Set<String>s = ((CSVRecord) lr.get(0)).getData().keySet();
-     	String decl="";
+		public static List<String> generateEDBs2 (Term tm, List<Record> lr, Term logicalsource, String tablename, boolean emitFacts, BufferedWriter factsWriter) throws Exception{
+		List<String> EDBs = new LinkedList<String>();
+		String decl="";
      	Boolean found = false; 
      	 if (ls.containsKey(logicalsource)) {
      	 	jc_count=ls.get(logicalsource);
@@ -318,13 +428,11 @@ public class DatalogGenerator {
      	 }else {
      	 	jc_count=d_count+1;
      	 }
-   	 schema2= new LinkedList<String>(s);
- 	 //System.out.println(schema2);
-   	schema2.remove("key");
+	 //System.out.println(schema2);
 	    if (!found) {
 	    	List<String> normalizedSchema = new LinkedList<String>();
 	    	for (String column : schema2) {
-	    		normalizedSchema.add(column.toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
+			normalizedSchema.add(normalizeColumn(column));
 	    	}
 
 	    	StringBuilder declBuilder = new StringBuilder();
@@ -369,11 +477,11 @@ public class DatalogGenerator {
        	variables22 ="";
        	variablesdec2 ="";
          	 for (int i=0; i<schema2.size()-1;i++) {
-         		 variables2= variables2 + schema2.get(i).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", ";
+			 variables2= variables2 + normalizeColumn(schema2.get(i))+", ";
          		variables22= variables22 + "z"+i+", ";
          		variablesdec2= variablesdec2 + "z"+i+":symbol, ";
       			 }
-         	 variables2 = variables2+ schema2.get(schema2.size()-1).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "");
+			 variables2 = variables2+ normalizeColumn(schema2.get(schema2.size()-1));
          	variables22 = variables22+ "z"+(schema2.size()-1);
          	// variablesdec2= "x:symbol";
          	variablesdec2= variablesdec2 + "z"+(schema2.size()-1)+":symbol";
@@ -384,7 +492,7 @@ public class DatalogGenerator {
                term_predicates2.put(ff.getTerm(), predicate2);
           	}
             else if (q.getPredicate().getValue().contains("reference")) {
-           	term_predicates2.put(ff.getTerm(), schema2.get(schema2.indexOf(q.getObject().getValue())).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables2+")");   
+			term_predicates2.put(ff.getTerm(), columnVariable(schema2, q.getObject().getValue())+", "+variables2+")");
             }
             else if (q.getPredicate().getValue().contains("constant")) {
            	term_predicates2.put(ff.getTerm(), "\""+q.getObject().getValue().replaceAll("\"", "")+"\""+", "+variables2+")");
@@ -400,7 +508,7 @@ public class DatalogGenerator {
        		if (e.toString().startsWith("ReferenceExecutor that works with ")) {
        			String a = e.toString().replace("ReferenceExecutor that works with ", "");
        			//vars.add("@toIRI(x"+schema.indexOf(a)+")");
-       			String colName = schema.get(schema.indexOf(a)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "");
+			String colName = columnVariable(schema, a);
        			vars.add("@toIRI(" + colName + ")");
        			
        		}else {
@@ -439,7 +547,7 @@ public class DatalogGenerator {
        		if (e.toString().startsWith("ReferenceExecutor that works with ")) {
        			String a = e.toString().replace("ReferenceExecutor that works with ", "");
        			//vars.add("@toIRI(z"+schema2.indexOf(a)+")");
-       			String colName = schema2.get(schema2.indexOf(a)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "");
+			String colName = columnVariable(schema2, a);
        			vars.add("@toIRI(" + colName + ")");
        		}else {
        			vars.add(e.toString());
@@ -489,10 +597,10 @@ public class DatalogGenerator {
        	variables ="";
        	variablesdec="";
          	 for (int i=0; i<schema.size()-1;i++) {
-         		 variables= variables + schema.get(i).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", ";
+			 variables= variables + normalizeColumn(schema.get(i))+", ";
          		variablesdec= variablesdec + "x"+i+":symbol, ";
       			 }
-         	 variables = variables+ schema.get(schema.size()-1).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "");
+			 variables = variables+ normalizeColumn(schema.get(schema.size()-1));
          	variablesdec= variablesdec + "x"+(schema.size()-1)+":symbol";
         	//variablesdec= "x:symbol";
          	 for (Quad q:qs.getQuads(ff.getTerm(), null, null)) {
@@ -502,7 +610,7 @@ public class DatalogGenerator {
                term_predicates2.put(ff.getTerm(), predicate2);
           	}
             else if (q.getPredicate().getValue().contains("reference")) {
-           	term_predicates2.put(ff.getTerm(), schema.get(schema.indexOf(q.getObject().getValue())).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+")");         	  
+			term_predicates2.put(ff.getTerm(), columnVariable(schema, q.getObject().getValue())+", "+variables+")");
             }
             else if (q.getPredicate().getValue().contains("constant")) {
            	term_predicates2.put(ff.getTerm(), "\""+q.getObject().getValue().replaceAll("\"", "")+"\""+", "+variables+")");
@@ -531,7 +639,7 @@ public class DatalogGenerator {
    	}else {
    		graph_terms.get(q.getSubject()).add(q.getObject());
    	}
-   	term_predicates2.put(qq.getSubject(), schema.get(schema.indexOf(qq.getObject().getValue())).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+")");	  
+	term_predicates2.put(qq.getSubject(), columnVariable(schema, qq.getObject().getValue())+", "+variables+")");
    }
    else if (gval2.contains("constant")&&!(qq.getObject().getValue().equals("http://w3id.org/rml/defaultGraph"))) {
    	if (!graph_terms.containsKey(ff.getTerm())) {
@@ -547,7 +655,8 @@ public class DatalogGenerator {
             }
             
             try {
-        if (qs.getQuad(null, null, ff.getTerm()).getPredicate().getValue().contains("predicateMap")) {
+	    if (qs.getQuads(null, null, ff.getTerm()).stream()
+			.anyMatch(quad -> quad.getPredicate().getValue().contains("predicateMap"))) {
            	 List <Quad> lq = qs.getQuads(ff2.getGraphMappingInfo().getTerm(), null, null);
            	   for (Quad qqs: lq) {
            		   if (qqs.getPredicate().getValue().contains("graphMap")) {
@@ -573,7 +682,7 @@ public class DatalogGenerator {
            		}else {
            			graph_terms.get(ff.getTerm()).add(qqs.getObject());
            		}
-           		term_predicates2.put(qq.getSubject(), schema.get(schema.indexOf(qq.getObject().getValue())).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+")");
+				term_predicates2.put(qq.getSubject(), columnVariable(schema, qq.getObject().getValue())+", "+variables+")");
            	}
            	else if (gval2.contains("constant")&&!(qq.getObject().getValue().equals("http://w3id.org/rml/defaultGraph"))) {
            		if (!graph_terms.containsKey(ff.getTerm())) {
@@ -856,7 +965,7 @@ public class DatalogGenerator {
               		try { 
               		//	Quad qqs=qs.getQuad(ff.getTerm(), null,null);
               			Quad qq=qs.getQuad(ff.getTerm(), new NamedNode("http://w3id.org/rml/reference"),null);
-              			String datatype = lr.get(0).getDataType(qq.getObject().getValue());        			
+					String datatype = lr.get(0).getDataType(resolveColumn(schema, qq.getObject().getValue()));
                      	if (!datatype.equals(null)) {
                   		datatypes.put(pogm.getObjectMappingInfo().getTerm(), datatype);
                   	}
@@ -891,13 +1000,9 @@ public class DatalogGenerator {
               	 System.out.println(qq.getSubject()+" "+qq.getPredicate()+" "+qq.getObject());
                 }
          	List<Term> table =Utils.getObjectsFromQuads(q.getQuads(logicalsource, new NamedNode(NAMESPACES.RML2 + "iterator"), null));
-        	 tablename2 = table.get(0).stringValue().replaceAll(" ", "").replaceAll("`", "");
-        	tablename2 = tablename2.replaceAll("[\\r\\n\\t]+", "").trim();
-
-        	if (tablename2 != null && tablename2.toLowerCase().contains("select")) {
-        	    Matcher matcher = Pattern.compile("(?i)\\bfrom\\b\\s+([A-Za-z_][A-Za-z0-9_$]*)").matcher(tablename2);
-        	    tablename2 = matcher.find() ? matcher.group(1) : "query";
-        	}
+            String logicalTable = table.get(0).stringValue();
+            tablename2 = relationName(logicalTable);
+            schema2 = readColumns(logicalTable);
         	 //System.out.println(tablename2);
 		   BufferedWriter joinFactsWriter = null;
 		   try {
@@ -922,14 +1027,14 @@ public class DatalogGenerator {
           		 int i=0;
           		 for (Quad qw: q.getQuads(po, new NamedNode("http://w3id.org/rml/joinCondition"), null)) {
           		 Term jc = qw.getObject();
-          		String parent =q.getQuad(jc, new NamedNode("http://w3id.org/rml/parent"), null).getObject().getValue();
-          		String child =q.getQuad(jc, new NamedNode("http://w3id.org/rml/child"), null).getObject().getValue();
-              	String dec1= ".decl "+"eval_jcc_"+jc.getValue()+"("+variablesdec+", "+"y"+schema.indexOf(child)+":symbol)";
-              	String dec= ".decl "+"eval_jcp_"+jc.getValue()+"("+variablesdec2+", "+"y"+schema2.indexOf(parent)+":symbol)";
+				String parent =resolveColumn(schema2, q.getQuad(jc, new NamedNode("http://w3id.org/rml/parent"), null).getObject().getValue());
+				String child =resolveColumn(schema, q.getQuad(jc, new NamedNode("http://w3id.org/rml/child"), null).getObject().getValue());
+				String dec1= ".decl "+"eval_jcc_"+jc.getValue()+"("+variablesdec+", "+"y"+schema.indexOf(child)+":symbol)";
+				String dec= ".decl "+"eval_jcp_"+jc.getValue()+"("+variablesdec2+", "+"y"+schema2.indexOf(parent)+":symbol)";
               	declarations.add(dec1);  
               	declarations.add(dec);  
-          		String rule1= "eval_jcc_"+jc.getValue()+"("+schema.get(schema.indexOf(child)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables+") :- "+ tablename+"_lt"+l_count+"("+ variables+").";
-          		String rule12= "eval_jcp_"+jc.getValue()+"("+schema2.get(schema2.indexOf(parent)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "")+", "+variables2+") :- "+ tablename2+"_lt"+jc_count+"("+ variables2+").";
+				String rule1= "eval_jcc_"+jc.getValue()+"("+normalizeColumn(child)+", "+variables+") :- "+ tablename+"_lt"+l_count+"("+ variables+").";
+				String rule12= "eval_jcp_"+jc.getValue()+"("+normalizeColumn(parent)+", "+variables2+") :- "+ tablename2+"_lt"+jc_count+"("+ variables2+").";
           		join=join+", eval_jcc_"+jc.getValue()+"("+"v"+i+", "+variables+"), "+"eval_jcp_"+jc.getValue()+"("+"v"+i+", "+variables22+")";
           		rules.add(rule12);
           		rules.add(rule1);

@@ -176,7 +176,7 @@ def run_case(
         "-dsn",
         (
             f"jdbc:mysql://127.0.0.1:{mysql_port}/{database_name}"
-            "?allowPublicKeyRetrieval=true"
+            "?allowPublicKeyRetrieval=true&padCharsWithSpace=true"
         ),
         "-u",
         "root",

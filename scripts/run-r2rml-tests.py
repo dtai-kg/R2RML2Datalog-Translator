@@ -1,5 +1,6 @@
 import difflib
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -10,6 +11,27 @@ from pathlib import Path
 PROJECT_DIRECTORY = Path(__file__).resolve().parent.parent
 BUILD_DIRECTORY = PROJECT_DIRECTORY / "build" / "r2rml-tests"
 CASES_DIRECTORY = PROJECT_DIRECTORY / "R2RML2Datalog-Tests"
+
+
+def resolve_executable(name: str) -> str:
+    if os.name == "nt" and not name.lower().endswith(".cmd"):
+        cmd_name = f"{name}.cmd"
+        resolved = shutil.which(cmd_name)
+        if resolved:
+            return resolved
+    resolved = shutil.which(name)
+    return resolved or name
+
+
+def get_docker_user() -> str:
+    if os.name == "nt":
+        return "0:0"
+    try:
+        return f"{os.getuid()}:{os.getgid()}"
+    except AttributeError:
+        return "0:0"
+
+
 MYSQL_IMAGE = (
     "mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb"
 )
@@ -19,8 +41,42 @@ SOUFFLE_IMAGE = (
 )
 MYSQL_CONTAINER = f"r2rml-tests-mysql-{os.getpid()}"
 MYSQL_PASSWORD = "r2rml-tests"
-OUTPUT_FILES = ("triple.csv", "quadruple.csv")
+OUTPUT_FILES = ("output.nq",)
 EXPECTED_CASES = 49
+
+
+def normalize_rdf_row(line: str) -> str:
+    row = line.strip()
+    if not row:
+        return ""
+    if "\t" in row:
+        parts = [part.strip() for part in row.split("\t")]
+        if len(parts) == 3:
+            subject, predicate, object_ = parts
+            return f"{subject} {predicate} {object_} ."
+        if len(parts) >= 4:
+            subject, predicate, object_, *graph = parts
+            graph_text = graph[0] if graph else ""
+            if graph_text:
+                return f"{subject} {predicate} {object_} {graph_text} ."
+            return f"{subject} {predicate} {object_} ."
+    return row.rstrip(" .") + " ." if not row.endswith(".") else row
+
+
+def materialize_output_nq(case_directory: Path) -> Path:
+    output_path = case_directory / "output.nq"
+    rows: list[str] = []
+    for csv_name in ("triple.csv", "quadruple.csv"):
+        csv_path = case_directory / csv_name
+        if not csv_path.exists():
+            continue
+        for line in csv_path.read_text(encoding="utf-8").splitlines():
+            normalized = normalize_rdf_row(line)
+            if normalized:
+                rows.append(normalized)
+    if rows:
+        output_path.write_text("\n".join(sorted(rows)) + "\n", encoding="utf-8")
+    return output_path
 
 
 def print_log(path: Path) -> None:
@@ -44,13 +100,20 @@ def run_logged(
 
 
 def sorted_contents(path: Path) -> bytes:
-    contents = path.read_bytes()
+    contents = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
     if not contents:
         return b""
-    lines = contents.split(b"\n")
-    if lines[-1] == b"":
-        lines.pop()
-    return b"".join(line + b"\n" for line in sorted(lines))
+    normalized_lines = []
+    for raw_line in contents.split(b"\n"):
+        if not raw_line:
+            continue
+        line = re.sub(rb"\s+\.$", b" .", raw_line.strip())
+        if not line:
+            continue
+        # normalize multiple spaces between IRI/literal term boundaries
+        line = re.sub(rb">\s{2,}([<\"_])", rb"> \1", line)
+        normalized_lines.append(line)
+    return b"".join(line + b"\n" for line in sorted(normalized_lines))
 
 
 def compare_output(source_directory: Path, case_directory: Path, name: str) -> bytes:
@@ -153,6 +216,7 @@ def run_case(
         print_log(souffle_log)
         return False
 
+    materialize_output_nq(case_directory)
     case_passed = True
     for output_file in OUTPUT_FILES:
         difference = compare_output(source_directory, case_directory, output_file)
@@ -202,9 +266,10 @@ def main() -> int:
         PROJECT_DIRECTORY / "translator" / "src", translator_directory / "src"
     )
 
+    mvn_executable = resolve_executable("mvn")
     if subprocess.run(
         [
-            "mvn",
+            mvn_executable,
             "--quiet",
             "--file",
             str(translator_directory / "pom.xml"),
@@ -217,7 +282,7 @@ def main() -> int:
         print("Build failed", file=sys.stderr)
         return 1
 
-    docker_user = f"{os.getuid()}:{os.getgid()}"
+    docker_user = get_docker_user()
     if subprocess.run(
         [
             "docker",
@@ -311,7 +376,9 @@ def main() -> int:
         dependencies = (
             (BUILD_DIRECTORY / "classpath.txt").read_text(encoding="utf-8").strip()
         )
-        classpath = f"{translator_directory / 'target' / 'classes'}:{dependencies}"
+        classpath = os.pathsep.join(
+            [str(translator_directory / "target" / "classes"), dependencies]
+        )
 
         passed = 0
         failed = 0

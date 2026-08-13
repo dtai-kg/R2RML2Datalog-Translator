@@ -82,6 +82,7 @@ public class DatalogGenerator {
     static  HashMap<String,String>donesubjtermtypes= new HashMap<String,String>();
     static  HashMap<String,String>donetermtypes= new HashMap<String,String>();
     static  HashMap<String,String>tablesterms= new HashMap<String,String>();
+    static boolean baseMode = false;
 
 	public static void exec_dlog(String mappingfiledirectory,  String CONNECTION, String username, String password, Boolean base,String output) throws Exception {
 		exec_dlog(mappingfiledirectory, CONNECTION, username, password, base, output, true);
@@ -90,6 +91,7 @@ public class DatalogGenerator {
 	public static void exec_dlog(String mappingfiledirectory,  String CONNECTION, String username, String password, Boolean base,String output, boolean emitFacts) throws Exception {
         //String CONNECTION =  "jdbc:mysql://localhost:3306/r2rml";
          //System.out.println(dbClassName);
+        baseMode = base;
             // Class.forName(xxx) loads the jdbc classes and
             // creates a drivermanager class factory
           //  Class.forName(dbClassName);
@@ -135,6 +137,15 @@ public class DatalogGenerator {
          x.createNewFile();
 
          FileWriter out = new FileWriter(x);
+         // Write .functor declarations for all conversion functors in functors.cpp
+         out.write(".functor  extract_second_iri(x:symbol):symbol \n");
+         out.write(".functor  toIRI(x:symbol):symbol \n");
+         out.write(".functor  toDoubleLiteral(x:symbol):symbol \n");
+         out.write(".functor  convertDateTime(x:symbol):symbol \n");
+         out.write(".functor  convertBool(x:symbol):symbol \n");
+         out.write(".functor  toIntLiteral(x:symbol):symbol \n");
+         out.write(".functor  convertDate(x:symbol):symbol \n");
+         out.write(".functor  trimString(x:symbol):symbol \n");
          for (Term a:tms) {
          	Mapping m =f.createMapping(a, rmlStore);
          	 
@@ -196,7 +207,7 @@ public class DatalogGenerator {
   }
   out.flush();
   out.close();
-  System.out.println("✔ Translation completed. Datalog program and facts files are written to: " + Utils.getFile(x.getPath()).getParent());
+  System.out.println("âœ” Translation completed. Datalog program and facts files are written to: " + Utils.getFile(x.getPath()).getParent());
           }
 
 	public static LinkedHashSet<String> GenerateMapRules(String mapPath,QuadStore qs,Mapping h,List<Record>lr,List<String>edbs,MappingFactory f, RecordsFactory factory,boolean base, Term logicalsource, boolean emitFacts) throws Exception{
@@ -390,7 +401,8 @@ public class DatalogGenerator {
        		if (e.toString().startsWith("ReferenceExecutor that works with ")) {
        			String a = e.toString().replace("ReferenceExecutor that works with ", "");
        			//vars.add("@toIRI(x"+schema.indexOf(a)+")");
-       			vars.add(schema.get(schema.indexOf(a)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
+       			String colName = schema.get(schema.indexOf(a)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "");
+       			vars.add("@toIRI(" + colName + ")");
        			
        		}else {
        			vars.add(e.toString());
@@ -416,7 +428,7 @@ public class DatalogGenerator {
    	temp=temp+")";
    }
        	}
-       	temp=temp.replaceAll(" ", "");
+
        		return temp;
        	}
        public static String generateTemplate2(List<Extractor> l) {
@@ -428,7 +440,8 @@ public class DatalogGenerator {
        		if (e.toString().startsWith("ReferenceExecutor that works with ")) {
        			String a = e.toString().replace("ReferenceExecutor that works with ", "");
        			//vars.add("@toIRI(z"+schema2.indexOf(a)+")");
-       			vars.add(schema2.get(schema2.indexOf(a)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", ""));
+       			String colName = schema2.get(schema2.indexOf(a)).toLowerCase().replace("(", "_").replace(")", "").replaceAll(" ", "");
+       			vars.add("@toIRI(" + colName + ")");
        		}else {
        			vars.add(e.toString());
        		}
@@ -453,9 +466,25 @@ public class DatalogGenerator {
    	temp=temp+")";
    }
        	}
-       	temp=temp.replaceAll(" ", "");
+
        		return temp;
        	}
+       
+       public static String applyDataTypeConversion(String value, String datatype) {
+       	if (datatype == null || datatype.isEmpty()) {
+       		return value;
+       	}
+       	// Only use functors defined in functors.cpp
+       	if (datatype.contains("double") || datatype.contains("float")) {
+       		return "@toDoubleLiteral(" + value + ")";
+       	} else if (datatype.contains("dateTime")) {
+       		return "@convertDateTime(" + value + ")";
+       	} else if (datatype.contains("boolean")) {
+       		return "@convertBool(" + value + ")";
+       	}
+       	// For integer, date, string, etc: pass through as-is
+       	return value;
+       }
        
        public static void generateTermrules(MappingInfo ff,PredicateObjectGraphMapping ff2, QuadStore qs,Mapping h,List<Record>lr) throws Exception{
        	variables ="";
@@ -604,7 +633,7 @@ public class DatalogGenerator {
          	} else {
      		String[]s2= head.split(", ");
      		String ma=term_predicates2.get(h.getSubjectMappingInfo().getTerm());
-            if (ma.contains("\"https")||ma.contains("\"http")||!base) {
+            if (ma.matches(".*\"[a-zA-Z][a-zA-Z0-9+.]*:.*")||!base) {
                  rule2 = "Subject"+l_count+"_"+"lt"+d_count+"("+ "cat(\"<\",cat("+s2[0]+",\">\")), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
             }else {
                 rule2 = "Subject"+l_count+"_"+"lt"+d_count+"("+ "cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
@@ -637,7 +666,7 @@ public class DatalogGenerator {
              	String dec= ".decl "+"Graph"+l_count+""+g_count+"_"+"lt"+d_count+"("+variablesdec+", "+"y:symbol"+")";
              	declarations.add(dec);
              	String rule2="";
-                if (ma.contains("\"https")||ma.contains("\"http")||!base) {
+                if (ma.matches(".*\"[a-zA-Z][a-zA-Z0-9+.]*:.*")||!base) {
                  rule2 = "Graph"+l_count+""+g_count+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s2[0]+",\">\")), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
                }else {
                 rule2 = "Graph"+l_count+""+g_count+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
@@ -672,7 +701,7 @@ public class DatalogGenerator {
                 	declarations.add(dec);
                 	String ma=term_predicates2.get(pog.getPredicateMappingInfo().getTerm());
                    String rule2="";
-                   if (ma.contains("\"https")||ma.contains("\"http")||!base) {
+                   if (ma.matches(".*\"[a-zA-Z][a-zA-Z0-9+.]*:.*")||!base) {
                         rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s2[0]+",\">\")), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
                    }else {
                        rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
@@ -712,9 +741,19 @@ public class DatalogGenerator {
             		if (termTypes.contains(new NamedNode("http://w3id.org/rml/IRI"))||(fo&&termTypes.isEmpty())||fo2) {
             			//String head2=term_predicates2.get(t);
             			String[]s22= head2.split(", ");
+            			// Constant string literal detected by quoted value not starting with http
+            			boolean isStringLiteralConst = s22[0].trim().startsWith("\"") && !s22[0].trim().startsWith("\"http");
+            			if (isStringLiteralConst) {
+            				// Override to literal rule for non-IRI quoted constants
+            				String rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"\\\"\",cat("+s22[0]+",\"\\\"\"))," +variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
+            				map=map+", "+"Object"+l_count+""+i+"_"+"lt"+d_count+"("+"o, "+variables+")";
+            				doneobjs.put(head2, "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"o, "+variables+")");
+            				donetermtypes.put(head2, "http://w3id.org/rml/Literal");
+            				al.add(rule22);
+            			} else {
                 		String ma=term_predicates2.get(t);
                 		String rule22="";
-                       if (ma.contains("\"https")||ma.contains("\"http")||!base) {
+                       if (ma.matches(".*\"[a-zA-Z][a-zA-Z0-9+.]*:.*")||!base) {
                         rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s22[0]+",\">\")), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
                       }else {
                        rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s22[0]+"))"+",\">\"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
@@ -723,6 +762,7 @@ public class DatalogGenerator {
                 		doneobjs.put(head2, "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"o, "+variables+")");
                 		donetermtypes.put(head2, "http://w3id.org/rml/IRI");
                 		al.add(rule22);
+            		} // end else (not isStringLiteralConst)
             	}else if (termTypes.contains(new NamedNode("http://w3id.org/rml/BlankNode"))) {
             		//String head2=term_predicates2.get(t);
         			String[]s22= head2.split(", ");
@@ -738,9 +778,13 @@ public class DatalogGenerator {
             		String rule22="";
             		if (lantag.equals("")) {
             			if (datatypes.containsKey(t)) {
-            					rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"\\\"\",cat("+s22[0]+",\"\\\"\")), \"^^<"+datatypes.get(t)+">\""+"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
+            					String convertedValue = applyDataTypeConversion(s22[0], datatypes.get(t));
+            					rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"\\\"\",cat("+convertedValue+",\"\\\"\")), \"^^<"+datatypes.get(t)+">\""+"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
             			}else {
-            		 rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"\\\"\",cat("+s22[0]+",\"\\\"\"))," +variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
+            				// trimString and null-guard only apply to plain column references, not function-call expressions
+            			String plainVal = (s22[0].trim().startsWith("\"") || s22[0].contains("(")) ? s22[0] : "@trimString("+s22[0]+")";
+            			String nullGuard = (s22[0].trim().startsWith("\"") || s22[0].contains("(")) ? "" : ", "+s22[0]+" != \"\"";
+            		 rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"\\\"\",cat("+plainVal+",\"\\\"\"))," +variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+")"+nullGuard+".";
             			}}else {
             			rule22 = "Object"+l_count+""+i+"_"+"lt"+d_count+"("+ "cat(cat(\"\\\"\",cat("+s22[0]+",\"\\\"\")),\"@"+lantag+"\""+"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
             		}
@@ -771,7 +815,7 @@ public class DatalogGenerator {
             	declarations.add(dec);
             	String ma=term_predicates2.get(pog.getPredicateMappingInfo().getTerm());
             	String rule2="";
-               if (ma.contains("\"https")||ma.contains("\"http")||!base) {
+               if (ma.matches(".*\"[a-zA-Z][a-zA-Z0-9+.]*:.*")||!base) {
                     rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(\"<\",cat("+s2[0]+",\">\")), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
                }else {
                    rule2 = "Predicate"+l_count+""+i+"_"+"lt"+d_count+"("+"cat(cat(\"<\",cat(\""+baseIRI+"\","+s2[0]+"))"+",\">\"), "+variables+")"+" :- "+ tablename+"_lt"+d_count+"("+ variables+").";
@@ -820,6 +864,14 @@ public class DatalogGenerator {
                   		datatypes.put(pogm.getObjectMappingInfo().getTerm(), datatype);
                   	}
               		}catch (java.lang.Exception s) {
+              		}
+              		// Explicit rr:datatype overrides SQL-inferred type
+              		try {
+              			Quad explicitDt=qs.getQuad(ff.getTerm(), new NamedNode("http://w3id.org/rml/datatype"),null);
+              			if (explicitDt != null) {
+              				datatypes.put(pogm.getObjectMappingInfo().getTerm(), explicitDt.getObject().getValue());
+              			}
+              		} catch (java.lang.Exception s) {
               		}
 
           		}
@@ -937,7 +989,9 @@ public class DatalogGenerator {
                   			rules.add(rule);
               			}
               			}else if (gr==false) {
-              				String rule = "triple(s,p,o) :- "+subj_map+", "+ k+".";
+              				String rule = baseMode
+              					? "triple(@extract_second_iri(s),@extract_second_iri(p),@extract_second_iri(o)) :- "+subj_map+", "+ k+"."
+              					: "triple(s,p,o) :- "+subj_map+", "+ k+".";
                   			rules.add(rule);
               			}
               		}
@@ -982,11 +1036,14 @@ public class DatalogGenerator {
               			}
               			}else if (gr==false) {
               				for (String k:maps_join.get(tt2)) {
+              				String tripleHead = baseMode
+              					? "triple(@extract_second_iri(s),@extract_second_iri(p),@extract_second_iri(s2))"
+              					: "triple(s,p,s2)";
               				if (!joins.containsKey(tt2)) {
-              	    			String rule = "triple(s,p,s2) :- "+subj_map+", "+k+".";
+              	    			String rule = tripleHead+" :- "+subj_map+", "+k+".";
               	    			rules.add(rule);
               	    		}else {
-              	    			String rule = "triple(s,p,s2) :- "+subj_map+", "+ k+joins.get(tt2)+".";
+              	    			String rule = tripleHead+" :- "+subj_map+", "+ k+joins.get(tt2)+".";
               	    			rules.add(rule);
               	    		}
               			}

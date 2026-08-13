@@ -1,3 +1,6 @@
 [submodule "R2RML2Datalog-Tests"]
 	path = R2RML2Datalog-Tests
 	url = https://github.com/dtai-kg/R2RML2Datalog-Tests.git
+[submodule "r2rml-test-cases-support"]
+	path = r2rml-test-cases-support
+	url = https://github.com/kg-construct/r2rml-test-cases-support.git

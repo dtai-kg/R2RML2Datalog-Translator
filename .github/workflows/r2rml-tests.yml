@@ -23,5 +23,5 @@ jobs:
           java-version: 17
           cache: maven
 
-      - name: Run R2RML tests
+      - name: Run R2RML test catalogs
         run: python3 scripts/run-r2rml-tests.py

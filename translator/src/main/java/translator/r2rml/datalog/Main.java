@@ -194,8 +194,6 @@ public class Main {
             printHelp(options);
         } catch (IllegalArgumentException exp) {
             throw exp;
-        } catch (Exception e) {
-            logger.error(e.getMessage(), e);
         }
     }
 

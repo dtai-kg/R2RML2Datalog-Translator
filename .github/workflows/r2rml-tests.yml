@@ -9,12 +9,25 @@ permissions:
 
 jobs:
   r2rml-tests:
+    name: R2RML tests (${{ matrix.database }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        database:
+          - mysql
+          - postgresql
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          python-version: "3.13"
 
       - name: Set up Java
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
@@ -23,5 +36,11 @@ jobs:
           java-version: 17
           cache: maven
 
+      - name: Install test dependencies
+        run: uv sync --project test --locked
+
+      - name: Run Python tests
+        run: uv run --project test python -m unittest discover --start-directory test
+
       - name: Run R2RML test catalogs
-        run: python3 scripts/run-r2rml-tests.py
+        run: uv run --project test python test/run-r2rml-tests.py --database ${{ matrix.database }}

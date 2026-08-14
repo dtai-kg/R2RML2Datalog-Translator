@@ -1,0 +1,10 @@
+[project]
+name = "r2rml2datalog-tests"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "rdflib==7.2.1",
+]

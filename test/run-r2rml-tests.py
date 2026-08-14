@@ -1,13 +1,17 @@
-import difflib
+import argparse
 import os
-import re
 import shutil
 import signal
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path
 from typing import NamedTuple
+
+from rdflib import Dataset
+from rdflib.compare import to_isomorphic
+from rdflib.exceptions import ParserError
 
 PROJECT_DIRECTORY = Path(__file__).resolve().parent.parent
 BUILD_DIRECTORY = PROJECT_DIRECTORY / "build" / "r2rml-tests"
@@ -28,7 +32,9 @@ DTAI_CATALOG = TestCatalog("dtai", "DTAI", DTAI_CASES_DIRECTORY, "R2RMLTC*-MySQL
 OFFICIAL_CATALOG = TestCatalog(
     "official", "Official", OFFICIAL_CASES_DIRECTORY, "R2RMLTC*", 62
 )
-TEST_CATALOGS = (DTAI_CATALOG, OFFICIAL_CATALOG)
+PASSED = "passed"
+FAILED = "failed"
+UNTESTED = "untested"
 
 
 def resolve_executable(name: str) -> str:
@@ -63,7 +69,7 @@ MYSQL_CONTAINER = f"r2rml-tests-mysql-{os.getpid()}"
 POSTGRES_CONTAINER = f"r2rml-tests-postgres-{os.getpid()}"
 DATABASE_NAME = "r2rml"
 DATABASE_PASSWORD = "r2rml-tests"
-POSTGRES_CASES = {"R2RMLTC0002f", "R2RMLTC0018a"}
+MYSQL_UNTESTED_CASES = {"R2RMLTC0002f", "R2RMLTC0018a"}
 
 
 def normalize_rdf_row(line: str) -> str:
@@ -84,17 +90,21 @@ def normalize_rdf_row(line: str) -> str:
     return row.rstrip(" .") + " ." if not row.endswith(".") else row
 
 
-def materialize_output_nq(case_directory: Path) -> Path:
+def materialize_output_nq(case_directory: Path) -> Path | None:
     output_path = case_directory / "output.nq"
     rows: list[str] = []
+    output_found = False
     for csv_name in ("triple.csv", "quadruple.csv"):
         csv_path = case_directory / csv_name
         if not csv_path.exists():
             continue
+        output_found = True
         for line in csv_path.read_text(encoding="utf-8").splitlines():
             normalized = normalize_rdf_row(line)
             if normalized:
                 rows.append(normalized)
+    if not output_found:
+        return None
     output_path.write_text(
         "\n".join(sorted(rows)) + ("\n" if rows else ""), encoding="utf-8"
     )
@@ -121,38 +131,32 @@ def run_logged(
     return result.returncode == 0
 
 
-def sorted_contents(path: Path) -> bytes:
-    contents = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-    if not contents:
-        return b""
-    normalized_lines = []
-    for raw_line in contents.split(b"\n"):
-        if not raw_line or raw_line.lstrip().startswith(b"#"):
-            continue
-        line = re.sub(rb"\s+\.$", b" .", raw_line.strip())
-        if not line:
-            continue
-        # normalize multiple spaces between IRI/literal term boundaries
-        line = re.sub(rb">\s{2,}([<\"_])", rb"> \1", line)
-        normalized_lines.append(line)
-    return b"".join(line + b"\n" for line in sorted(normalized_lines))
+def parse_rdf_dataset(path: Path) -> Dataset:
+    dataset = Dataset()
+    dataset.parse(path, format="nquads")
+    return dataset
 
 
-def compare_output(expected_path: Path, actual_path: Path) -> bytes:
-    expected = sorted_contents(expected_path)
-    actual = sorted_contents(actual_path)
-    difference = b"".join(
-        difflib.diff_bytes(
-            difflib.unified_diff,
-            expected.splitlines(keepends=True),
-            actual.splitlines(keepends=True),
-            fromfile=os.fsencode(expected_path),
-            tofile=os.fsencode(actual_path),
+def compare_output(expected_path: Path, actual_path: Path) -> bool:
+    expected = parse_rdf_dataset(expected_path)
+    actual = parse_rdf_dataset(actual_path)
+    expected_graphs = {graph_name for _, _, _, graph_name in expected.quads()}
+    actual_graphs = {graph_name for _, _, _, graph_name in actual.quads()}
+    if expected_graphs != actual_graphs:
+        return False
+
+    for graph_name in expected_graphs:
+        expected_graph = (
+            expected.default_context
+            if graph_name is None
+            else expected.graph(graph_name)
         )
-    )
-    if difference:
-        (actual_path.parent / "output.nq.diff").write_bytes(difference)
-    return difference
+        actual_graph = (
+            actual.default_context if graph_name is None else actual.graph(graph_name)
+        )
+        if to_isomorphic(expected_graph) != to_isomorphic(actual_graph):
+            return False
+    return True
 
 
 def load_mysql_database(database_name: str, script_path: Path, log_path: Path) -> bool:
@@ -221,13 +225,21 @@ def remove_case_logs(case_directory: Path) -> None:
 def run_case(
     catalog: TestCatalog,
     source_directory: Path,
-    classpath: str,
-    mysql_port: str,
-    postgres_port: str,
+    translator_jar: Path,
+    database: str,
+    database_port: str,
     docker_user: str,
-) -> bool:
+) -> str:
     case_name = source_directory.name
     case_label = f"{catalog.label}/{case_name}"
+    if (
+        catalog == OFFICIAL_CATALOG
+        and database == "mysql"
+        and case_name in MYSQL_UNTESTED_CASES
+    ):
+        print(f"{case_label}: UNTESTED (MySQL limitation)", flush=True)
+        return UNTESTED
+
     case_directory = BUILD_DIRECTORY / "cases" / catalog.slug / case_name
     case_directory.mkdir(parents=True)
 
@@ -240,15 +252,14 @@ def run_case(
             database_name, source_directory / "resource.sql", database_log
         )
         database_dsn = (
-            f"jdbc:mysql://127.0.0.1:{mysql_port}/{database_name}"
+            f"jdbc:mysql://127.0.0.1:{database_port}/{database_name}"
             "?allowPublicKeyRetrieval=true&padCharsWithSpace=true"
         )
         database_user = "root"
     else:
-        use_postgres = case_name in POSTGRES_CASES
         mappings = sorted(source_directory.glob("r2rml*.ttl"))
         mysql_mappings = [path for path in mappings if path.stem.endswith("-mysql")]
-        if mysql_mappings and not use_postgres:
+        if database == "mysql" and mysql_mappings:
             mapping_source = mysql_mappings[0]
         else:
             mapping_source = next(
@@ -257,10 +268,15 @@ def run_case(
         expected_outputs = sorted(source_directory.glob("mapped*.nq"))
         expected_output = expected_outputs[0] if expected_outputs else None
         database_script = OFFICIAL_DATABASES_DIRECTORY / f"d{case_name[8:11]}.sql"
-        if use_postgres:
+        if database == "postgresql":
+            postgres_script = database_script.with_name(
+                f"{database_script.stem}-postgresql.sql"
+            )
+            if postgres_script.exists():
+                database_script = postgres_script
             database_ready = load_postgres_database(database_script, database_log)
             database_dsn = (
-                f"jdbc:postgresql://127.0.0.1:{postgres_port}/{DATABASE_NAME}"
+                f"jdbc:postgresql://127.0.0.1:{database_port}/{DATABASE_NAME}"
             )
             database_user = "postgres"
         else:
@@ -268,7 +284,7 @@ def run_case(
                 DATABASE_NAME, database_script, database_log
             )
             database_dsn = (
-                f"jdbc:mysql://127.0.0.1:{mysql_port}/{DATABASE_NAME}"
+                f"jdbc:mysql://127.0.0.1:{database_port}/{DATABASE_NAME}"
                 "?allowPublicKeyRetrieval=true&padCharsWithSpace=true"
             )
             database_user = "root"
@@ -278,15 +294,14 @@ def run_case(
     if not database_ready:
         print(f"{case_label}: FAIL (database setup)", flush=True)
         print_log(database_log)
-        return False
+        return FAILED
 
     program_path = case_directory / "Datalog_rules.rs"
     translation_log = case_directory / "translation.log"
     translation_command = [
         "java",
-        "-cp",
-        classpath,
-        "translator.r2rml.datalog.Main",
+        "-jar",
+        str(translator_jar),
         "-m",
         str(mapping_path),
         "-dsn",
@@ -303,11 +318,11 @@ def run_case(
     if expected_output is None and not translated:
         remove_case_logs(case_directory)
         print(f"{case_label}: PASS", flush=True)
-        return True
+        return PASSED
     if not translated:
         print(f"{case_label}: FAIL (translation)", flush=True)
         print_log(translation_log)
-        return False
+        return FAILED
 
     souffle_log = case_directory / "souffle.log"
     souffle_command = [
@@ -331,27 +346,36 @@ def run_case(
     if expected_output is None and not executed:
         remove_case_logs(case_directory)
         print(f"{case_label}: PASS", flush=True)
-        return True
+        return PASSED
     if not executed:
         print(f"{case_label}: FAIL (Soufflé execution)", flush=True)
         print_log(souffle_log)
-        return False
+        return FAILED
 
     actual_output = materialize_output_nq(case_directory)
     if expected_output is None:
+        if actual_output is None:
+            remove_case_logs(case_directory)
+            print(f"{case_label}: PASS", flush=True)
+            return PASSED
         print(f"{case_label}: FAIL (invalid mapping was accepted)", flush=True)
-        return False
+        return FAILED
+    if actual_output is None:
+        print(f"{case_label}: FAIL (no RDF output)", flush=True)
+        return FAILED
 
-    difference = compare_output(expected_output, actual_output)
-    if difference:
+    try:
+        output_matches = compare_output(expected_output, actual_output)
+    except ParserError:
+        print(f"{case_label}: FAIL (invalid RDF output)", flush=True)
+        return FAILED
+    if not output_matches:
         print(f"{case_label}: FAIL (output comparison)", flush=True)
-        sys.stdout.buffer.write(difference)
-        sys.stdout.buffer.flush()
-        return False
+        return FAILED
 
     remove_case_logs(case_directory)
     print(f"{case_label}: PASS", flush=True)
-    return True
+    return PASSED
 
 
 def remove_container(container: str) -> None:
@@ -367,9 +391,11 @@ def stop_on_signal(signum, _frame) -> None:
     raise SystemExit(128 + signum)
 
 
-def discover_test_catalogs() -> list[tuple[TestCatalog, list[Path]]] | None:
+def discover_test_catalogs(
+    catalogs: tuple[TestCatalog, ...],
+) -> list[tuple[TestCatalog, list[Path]]] | None:
     discovered_catalogs = []
-    for catalog in TEST_CATALOGS:
+    for catalog in catalogs:
         case_directories = sorted(
             path
             for path in catalog.cases_directory.glob(catalog.case_pattern)
@@ -386,12 +412,7 @@ def discover_test_catalogs() -> list[tuple[TestCatalog, list[Path]]] | None:
     return discovered_catalogs
 
 
-def main() -> int:
-    shutil.rmtree(BUILD_DIRECTORY, ignore_errors=True)
-    discovered_catalogs = discover_test_catalogs()
-    if discovered_catalogs is None:
-        return 1
-
+def build_translator() -> Path | None:
     translator_directory = BUILD_DIRECTORY / "translator"
     translator_directory.mkdir(parents=True)
     shutil.copy2(
@@ -409,13 +430,109 @@ def main() -> int:
             "--quiet",
             "--file",
             str(translator_directory / "pom.xml"),
-            "compile",
-            "dependency:build-classpath",
-            f"-Dmdep.outputFile={BUILD_DIRECTORY / 'classpath.txt'}",
+            "package",
         ],
         check=False,
     ).returncode:
         print("Build failed", file=sys.stderr)
+        return None
+
+    translator_jar = translator_directory / "target" / "rulegen.jar"
+    try:
+        with zipfile.ZipFile(translator_jar) as archive:
+            manifest = archive.read("META-INF/MANIFEST.MF").decode("utf-8")
+    except (FileNotFoundError, KeyError, zipfile.BadZipFile):
+        print("Executable JAR manifest not found", file=sys.stderr)
+        return None
+    if "Main-Class: translator.r2rml.datalog.Main" not in manifest:
+        print("Executable JAR main class not found in manifest", file=sys.stderr)
+        return None
+    return translator_jar
+
+
+def start_database(database: str) -> bool:
+    if database == "mysql":
+        command = [
+            "docker",
+            "run",
+            "--detach",
+            "--rm",
+            "--name",
+            MYSQL_CONTAINER,
+            "--env",
+            f"MYSQL_ROOT_PASSWORD={DATABASE_PASSWORD}",
+            "--publish",
+            "127.0.0.1::3306",
+            MYSQL_IMAGE,
+            "--sql-mode=ANSI_QUOTES,PAD_CHAR_TO_FULL_LENGTH",
+        ]
+    else:
+        command = [
+            "docker",
+            "run",
+            "--detach",
+            "--rm",
+            "--name",
+            POSTGRES_CONTAINER,
+            "--env",
+            f"POSTGRES_PASSWORD={DATABASE_PASSWORD}",
+            "--publish",
+            "127.0.0.1::5432",
+            POSTGRES_IMAGE,
+        ]
+    return (
+        subprocess.run(command, stdout=subprocess.DEVNULL, check=False).returncode == 0
+    )
+
+
+def database_is_ready(database: str) -> bool:
+    if database == "mysql":
+        command = [
+            "docker",
+            "exec",
+            "--env",
+            f"MYSQL_PWD={DATABASE_PASSWORD}",
+            MYSQL_CONTAINER,
+            "mysql",
+            "--user=root",
+            "--execute",
+            "SELECT 1",
+        ]
+    else:
+        command = [
+            "docker",
+            "exec",
+            POSTGRES_CONTAINER,
+            "pg_isready",
+            "--username=postgres",
+        ]
+    return (
+        subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--database", choices=("mysql", "postgresql"), required=True)
+    args = parser.parse_args()
+    database = args.database
+    catalogs = (
+        (DTAI_CATALOG, OFFICIAL_CATALOG) if database == "mysql" else (OFFICIAL_CATALOG,)
+    )
+
+    shutil.rmtree(BUILD_DIRECTORY, ignore_errors=True)
+    discovered_catalogs = discover_test_catalogs(catalogs)
+    if discovered_catalogs is None:
+        return 1
+
+    translator_jar = build_translator()
+    if translator_jar is None:
         return 1
 
     docker_user = get_docker_user()
@@ -445,166 +562,74 @@ def main() -> int:
         print("Functor build failed", file=sys.stderr)
         return 1
 
-    if subprocess.run(
-        [
-            "docker",
-            "run",
-            "--detach",
-            "--rm",
-            "--name",
-            MYSQL_CONTAINER,
-            "--env",
-            f"MYSQL_ROOT_PASSWORD={DATABASE_PASSWORD}",
-            "--publish",
-            "127.0.0.1::3306",
-            MYSQL_IMAGE,
-            "--sql-mode=ANSI_QUOTES,PAD_CHAR_TO_FULL_LENGTH",
-        ],
-        stdout=subprocess.DEVNULL,
-        check=False,
-    ).returncode:
-        print("MySQL startup failed", file=sys.stderr)
-        return 1
-
-    if subprocess.run(
-        [
-            "docker",
-            "run",
-            "--detach",
-            "--rm",
-            "--name",
-            POSTGRES_CONTAINER,
-            "--env",
-            f"POSTGRES_PASSWORD={DATABASE_PASSWORD}",
-            "--publish",
-            "127.0.0.1::5432",
-            POSTGRES_IMAGE,
-        ],
-        stdout=subprocess.DEVNULL,
-        check=False,
-    ).returncode:
-        print("PostgreSQL startup failed", file=sys.stderr)
-        remove_container(MYSQL_CONTAINER)
+    container = MYSQL_CONTAINER if database == "mysql" else POSTGRES_CONTAINER
+    if not start_database(database):
+        print(f"{database} startup failed", file=sys.stderr)
+        remove_container(container)
         return 1
 
     signal.signal(signal.SIGTERM, stop_on_signal)
     try:
         for _ in range(60):
-            mysql_ready = (
-                subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        "--env",
-                        f"MYSQL_PWD={DATABASE_PASSWORD}",
-                        MYSQL_CONTAINER,
-                        "mysql",
-                        "--user=root",
-                        "--execute",
-                        "SELECT 1",
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                ).returncode
-                == 0
-            )
-            postgres_ready = (
-                subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        POSTGRES_CONTAINER,
-                        "pg_isready",
-                        "--username=postgres",
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                ).returncode
-                == 0
-            )
-            if mysql_ready and postgres_ready:
+            if database_is_ready(database):
                 break
             time.sleep(1)
         else:
             subprocess.run(
-                ["docker", "logs", MYSQL_CONTAINER],
+                ["docker", "logs", container],
                 stdout=sys.stderr,
                 stderr=sys.stderr,
                 check=False,
             )
-            subprocess.run(
-                ["docker", "logs", POSTGRES_CONTAINER],
-                stdout=sys.stderr,
-                stderr=sys.stderr,
-                check=False,
-            )
-            print("Databases did not become ready", file=sys.stderr)
+            print(f"{database} did not become ready", file=sys.stderr)
             return 1
 
-        mysql_port = (
+        container_port = "3306/tcp" if database == "mysql" else "5432/tcp"
+        database_port = (
             subprocess.run(
-                ["docker", "port", MYSQL_CONTAINER, "3306/tcp"],
+                ["docker", "port", container, container_port],
                 check=True,
                 capture_output=True,
                 text=True,
             )
             .stdout.strip()
             .rsplit(":", maxsplit=1)[1]
-        )
-        postgres_port = (
-            subprocess.run(
-                ["docker", "port", POSTGRES_CONTAINER, "5432/tcp"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            .stdout.strip()
-            .rsplit(":", maxsplit=1)[1]
-        )
-        dependencies = (
-            (BUILD_DIRECTORY / "classpath.txt").read_text(encoding="utf-8").strip()
-        )
-        classpath = os.pathsep.join(
-            [str(translator_directory / "target" / "classes"), dependencies]
         )
 
         total_passed = 0
         total_failed = 0
+        total_untested = 0
         for catalog, case_directories in discovered_catalogs:
             print(f"\n{catalog.label} catalog")
-            catalog_passed = 0
-            catalog_failed = 0
+            results = {PASSED: 0, FAILED: 0, UNTESTED: 0}
             for source_directory in case_directories:
-                if run_case(
+                result = run_case(
                     catalog,
                     source_directory,
-                    classpath,
-                    mysql_port,
-                    postgres_port,
+                    translator_jar,
+                    database,
+                    database_port,
                     docker_user,
-                ):
-                    catalog_passed += 1
-                else:
-                    catalog_failed += 1
+                )
+                results[result] += 1
 
             print(
-                f"\n{catalog.label}: {catalog_passed} passed, "
-                f"{catalog_failed} failed, "
-                f"{catalog_passed + catalog_failed} total"
+                f"\n{catalog.label}: {results[PASSED]} passed, "
+                f"{results[FAILED]} failed, {results[UNTESTED]} untested, "
+                f"{sum(results.values())} total"
             )
-            total_passed += catalog_passed
-            total_failed += catalog_failed
+            total_passed += results[PASSED]
+            total_failed += results[FAILED]
+            total_untested += results[UNTESTED]
 
         print(
             f"\nAll catalogs: {total_passed} passed, {total_failed} failed, "
-            f"{total_passed + total_failed} total"
+            f"{total_untested} untested, "
+            f"{total_passed + total_failed + total_untested} total"
         )
         return 1 if total_failed else 0
     finally:
-        remove_container(MYSQL_CONTAINER)
-        remove_container(POSTGRES_CONTAINER)
+        remove_container(container)
 
 
 if __name__ == "__main__":

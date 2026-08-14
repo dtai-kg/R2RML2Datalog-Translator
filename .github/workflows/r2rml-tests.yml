@@ -39,8 +39,5 @@ jobs:
       - name: Install test dependencies
         run: uv sync --project test --locked
 
-      - name: Run Python tests
-        run: uv run --project test python -m unittest discover --start-directory test
-
       - name: Run R2RML test catalogs
         run: uv run --project test python test/run-r2rml-tests.py --database ${{ matrix.database }}

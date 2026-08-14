@@ -1,7 +1,6 @@
 /build/
 /rulegen.jar
 translator/target/
-scripts/__pycache__/
+test/__pycache__/
 __pycache__/
 *.class
-

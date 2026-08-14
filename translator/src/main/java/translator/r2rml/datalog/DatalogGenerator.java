@@ -57,8 +57,8 @@ public class DatalogGenerator {
     static int jc_count =0;
     static int l_count =0;
     static int subj_count=0;
-    static  List<String> schema;
-    static  List<String> schema2;
+    static ColumnSchema schema;
+    static ColumnSchema schema2;
     static   String subj_map = ""; 
     static LinkedHashSet<String> declarations = new LinkedHashSet<String>();
     static  HashMap<Term,Integer> ls = new HashMap<Term,Integer>(); 
@@ -93,6 +93,15 @@ public class DatalogGenerator {
     private static Properties jdbcProperties;
     private static final String RR = "http://www.w3.org/ns/r2rml#";
     private static final String RML = "http://w3id.org/rml/";
+
+    private static final class ColumnSchema extends LinkedList<String> {
+        private static final long serialVersionUID = 1L;
+        private final boolean query;
+
+        private ColumnSchema(boolean query) {
+            this.query = query;
+        }
+    }
 
 	public static void exec_dlog(String mappingfiledirectory,  String CONNECTION, String username, String password, Boolean base,String output) throws Exception {
 		exec_dlog(mappingfiledirectory, CONNECTION, username, password, base, output, true);
@@ -278,11 +287,12 @@ public class DatalogGenerator {
 		return logicalTable.replaceAll("[\\s`\"]", "");
 	}
 
-	private static List<String> readColumns(String logicalTable) throws Exception {
-		String sql = logicalTable.toLowerCase(Locale.ROOT).contains("select")
+	private static ColumnSchema readColumns(String logicalTable) throws Exception {
+		boolean query = logicalTable.toLowerCase(Locale.ROOT).contains("select");
+		String sql = query
 				? logicalTable
 				: "SELECT * FROM " + logicalTable + " WHERE 1 = 0";
-		List<String> columns = new LinkedList<String>();
+		ColumnSchema columns = new ColumnSchema(query);
 		Set<String> labels = new HashSet<String>();
 
 		try (Connection connection = DriverManager.getConnection(jdbcConnection, jdbcProperties);
@@ -302,38 +312,49 @@ public class DatalogGenerator {
 		return columns;
 	}
 
-	private static String resolveColumn(List<String> columns, String sqlIdentifier) {
+	private static String resolveColumn(ColumnSchema columns, String sqlIdentifier) {
 		boolean delimited = sqlIdentifier.length() >= 2
 				&& sqlIdentifier.startsWith("\"")
 				&& sqlIdentifier.endsWith("\"");
 		String requested = delimited
 				? sqlIdentifier.substring(1, sqlIdentifier.length() - 1).replace("\"\"", "\"")
 				: sqlIdentifier;
-		if (!delimited && jdbcConnection.startsWith("jdbc:postgresql:")) {
-			requested = requested.toLowerCase(Locale.ROOT);
-		}
 
-		for (String column : columns) {
-			if ((delimited && column.equals(requested))
-					|| (!delimited && jdbcConnection.startsWith("jdbc:mysql:")
-							&& column.equalsIgnoreCase(requested))
-					|| (!delimited && column.equals(requested))) {
-				return column;
+		if (delimited || columns.query) {
+			for (String column : columns) {
+				if (column.equals(requested)) {
+					return column;
+				}
+			}
+		}
+		if (!delimited) {
+			String normalized = jdbcConnection.startsWith("jdbc:postgresql:")
+					? requested.toLowerCase(Locale.ROOT)
+					: requested;
+			for (String column : columns) {
+				if ((jdbcConnection.startsWith("jdbc:mysql:")
+						&& column.equalsIgnoreCase(normalized))
+						|| column.equals(normalized)) {
+					return column;
+				}
 			}
 		}
 		throw new IllegalArgumentException("Column not found: " + sqlIdentifier);
 	}
 
-	private static String columnVariable(List<String> columns, String sqlIdentifier) {
+	private static String columnVariable(ColumnSchema columns, String sqlIdentifier) {
 		return normalizeColumn(resolveColumn(columns, sqlIdentifier));
 	}
 
 	private static String normalizeColumn(String column) {
 		String normalized = column.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_");
+		if (normalized.equals("count")) {
+			return "column_count";
+		}
 		return Character.isDigit(normalized.charAt(0)) ? "column_" + normalized : normalized;
 	}
 
-	private static void validateSubjectIri(QuadStore store, Mapping mapping, List<Record> records, List<String> columns) {
+	private static void validateSubjectIri(QuadStore store, Mapping mapping, List<Record> records, ColumnSchema columns) {
 		Term subjectMap = mapping.getSubjectMappingInfo().getTerm();
 		NamedNode termType = new NamedNode(RML + "termType");
 		if (store.contains(subjectMap, termType, new NamedNode(RML + "BlankNode"))

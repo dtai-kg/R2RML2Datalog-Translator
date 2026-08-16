@@ -163,6 +163,10 @@ extern "C" char* convertBool(const char* input) {
 
 
 char* extract_second_iri(const char* input) {
+    if (!input) {
+        return copy_to_cstr("");
+    }
+
     std::string iri(input);
 
     // Find the second occurrence of "http" that is followed by "://"
@@ -190,10 +194,7 @@ char* extract_second_iri(const char* input) {
         result = iri; // Return as-is if no second IRI
     }
 
-    // Allocate and copy result
-    char* output = (char*) std::malloc(result.size() + 1);
-    std::strcpy(output, result.c_str());
-    return output;
+    return copy_to_cstr(result);
 }
 
 char* clean_value(const char* input) {

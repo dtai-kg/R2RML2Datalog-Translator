@@ -520,7 +520,9 @@ public class DatalogGenerator {
             }
        }
        }
-       public static String generateTemplate(List<Extractor> l) {
+       // asIRI controls whether column-derived template parts are percent-encoded via @toIRI:
+       // subject/predicate/graph templates are always IRIs; object templates pass the resolved term type.
+       public static String generateTemplate(List<Extractor> l, boolean asIRI) {
        	String base= "cat(";
        	String temp = base;
        	LinkedList<String>vars= new LinkedList<String>();
@@ -530,7 +532,7 @@ public class DatalogGenerator {
        			String a = e.toString().replace("ReferenceExecutor that works with ", "");
        			//vars.add("@toIRI(x"+schema.indexOf(a)+")");
 			String colName = columnVariable(schema, a);
-       			vars.add("@toIRI(" + colName + ")");
+       			vars.add(asIRI ? "@toIRI(" + colName + ")" : colName);
        			
        		}else {
        			vars.add(e.toString());
@@ -626,7 +628,15 @@ public class DatalogGenerator {
         	//variablesdec= "x:symbol";
          	 for (Quad q:qs.getQuads(ff.getTerm(), null, null)) {
             if (q.getPredicate().getValue().contains("template")) {
-           	 String temp = generateTemplate(Utils.parseTemplate(q.getObject().getValue(), false)); 
+           	 // Object templates declared rr:Literal/rr:BlankNode must not have their column values percent-encoded.
+           	 boolean isNonIRIObject = false;
+           	 if (ff2 != null && ff.getTerm().equals(ff2.getObjectMappingInfo().getTerm())) {
+           	 	List<Term> objectTermTypes = Utils.getObjectsFromQuads(
+           	 			qs.getQuads(ff.getTerm(), new NamedNode("http://w3id.org/rml/termType"), null));
+           	 	isNonIRIObject = objectTermTypes.contains(new NamedNode("http://w3id.org/rml/Literal"))
+           	 			|| objectTermTypes.contains(new NamedNode("http://w3id.org/rml/BlankNode"));
+           	 }
+           	 String temp = generateTemplate(Utils.parseTemplate(q.getObject().getValue(), false), !isNonIRIObject); 
                 String predicate2=temp+", "+variables+")";
                term_predicates2.put(ff.getTerm(), predicate2);
           	}
@@ -641,7 +651,7 @@ public class DatalogGenerator {
            	 Quad qq=qs.getQuad(qqs.getObject(), null, null);
    String gval2=qq.getPredicate().getValue();
    if (gval2.contains("template")) {
-   	 String temp = generateTemplate(Utils.parseTemplate(qq.getObject().getValue(), false)); 
+   	 String temp = generateTemplate(Utils.parseTemplate(qq.getObject().getValue(), false), true); 
        String predicate2=temp+", "+variables+")";
       term_predicates2.put(qq.getSubject(), predicate2); 
    	if (!graph_terms.containsKey(q.getSubject())) {
@@ -684,7 +694,7 @@ public class DatalogGenerator {
            	        	 Quad qq=qs.getQuad(qqs.getObject(), null, null);
            	String gval2=qq.getPredicate().getValue();
            	if (gval2.contains("template")) {
-           		 String temp = generateTemplate(Utils.parseTemplate(qq.getObject().getValue(), false)); 
+           		 String temp = generateTemplate(Utils.parseTemplate(qq.getObject().getValue(), false), true); 
            	    String predicate2=temp+", "+variables+")";
            	  term_predicates2.put(qq.getSubject(), predicate2);
            		if (!graph_terms.containsKey(ff.getTerm())) {

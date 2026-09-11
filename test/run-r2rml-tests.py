@@ -551,6 +551,8 @@ def main() -> int:
             "g++",
             SOUFFLE_IMAGE,
             "-std=c++17",
+            "-I/souffle/include",
+            "-DRAM_DOMAIN_SIZE=32",
             "-shared",
             "-fPIC",
             "/source/functors.cpp",

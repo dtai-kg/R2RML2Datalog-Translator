@@ -7,6 +7,8 @@
 #include <regex>
 #include <cctype>
 #include <cstdlib>
+#include <souffle/RecordTable.h>
+#include <souffle/SymbolTable.h>
 
 static char* copy_to_cstr(const std::string& s) {
     char* result = (char*)std::malloc(s.size() + 1);
@@ -302,8 +304,8 @@ char* isLanguageLiteral(const char* input) {
     return copy_to_cstr("1");
 }
 
-char* decodeIRI(const char* input) {
-    const std::string s = to_string_safe(input);
+souffle::RamDomain decodeIRI(souffle::SymbolTable *symbolTable, souffle::RecordTable *, souffle::RamDomain input) {
+    const std::string &s = symbolTable->decode(input);
     std::ostringstream out;
     for (size_t i = 0; i < s.size(); ++i) {
         if (s[i] == '%' && i + 2 < s.size() && is_hex_digit(s[i + 1]) && is_hex_digit(s[i + 2])) {
@@ -315,7 +317,8 @@ char* decodeIRI(const char* input) {
             out << s[i];
         }
     }
-    return copy_to_cstr(out.str());
+    // Preserve the C-string boundary of decoded zero bytes.
+    return symbolTable->encode(out.str().c_str());
 }
 
 char* stripAngleBrackets(const char* input) {
@@ -329,45 +332,58 @@ char* addAngleBrackets(const char* input) {
     return copy_to_cstr("<" + to_string_safe(input) + ">");
 }
 
-char* removePrefix(const char* input, const char* prefix) {
-    const std::string s = to_string_safe(input);
-    const std::string p = to_string_safe(prefix);
-    if (starts_with_impl(s, p)) return copy_to_cstr(s.substr(p.size()));
-    return copy_to_cstr("");
+souffle::RamDomain removePrefix(souffle::SymbolTable *symbolTable, souffle::RecordTable *, souffle::RamDomain input,
+                                souffle::RamDomain prefix) {
+    const std::string &s = symbolTable->decode(input);
+    const std::string &p = symbolTable->decode(prefix);
+    if (starts_with_impl(s, p))
+        return symbolTable->encode(s.substr(p.size()));
+    return symbolTable->encode("");
 }
 
-char* removeSuffix(const char* input, const char* suffix) {
-    const std::string s = to_string_safe(input);
-    const std::string suf = to_string_safe(suffix);
-    if (ends_with_impl(s, suf)) return copy_to_cstr(s.substr(0, s.size() - suf.size()));
-    return copy_to_cstr("");
+souffle::RamDomain removeSuffix(souffle::SymbolTable *symbolTable, souffle::RecordTable *, souffle::RamDomain input,
+                                souffle::RamDomain suffix) {
+    const std::string &s = symbolTable->decode(input);
+    const std::string &suf = symbolTable->decode(suffix);
+    if (ends_with_impl(s, suf))
+        return symbolTable->encode(s.substr(0, s.size() - suf.size()));
+    return symbolTable->encode("");
 }
 
-char* beforeFirst(const char* input, const char* delim) {
-    const std::string s = to_string_safe(input);
-    const std::string d = to_string_safe(delim);
-    if (d.empty()) return copy_to_cstr("");
+souffle::RamDomain beforeFirst(souffle::SymbolTable *symbolTable, souffle::RecordTable *, souffle::RamDomain input,
+                               souffle::RamDomain delim) {
+    const std::string &s = symbolTable->decode(input);
+    const std::string &d = symbolTable->decode(delim);
+    if (d.empty())
+        return symbolTable->encode("");
     size_t pos = s.find(d);
-    if (pos == std::string::npos) return copy_to_cstr("");
-    return copy_to_cstr(s.substr(0, pos));
+    if (pos == std::string::npos)
+        return symbolTable->encode("");
+    return symbolTable->encode(s.substr(0, pos));
 }
 
-char* afterFirst(const char* input, const char* delim) {
-    const std::string s = to_string_safe(input);
-    const std::string d = to_string_safe(delim);
-    if (d.empty()) return copy_to_cstr("");
+souffle::RamDomain afterFirst(souffle::SymbolTable *symbolTable, souffle::RecordTable *, souffle::RamDomain input,
+                              souffle::RamDomain delim) {
+    const std::string &s = symbolTable->decode(input);
+    const std::string &d = symbolTable->decode(delim);
+    if (d.empty())
+        return symbolTable->encode("");
     size_t pos = s.find(d);
-    if (pos == std::string::npos) return copy_to_cstr("");
-    return copy_to_cstr(s.substr(pos + d.size()));
+    if (pos == std::string::npos)
+        return symbolTable->encode("");
+    return symbolTable->encode(s.substr(pos + d.size()));
 }
 
-char* beforeLast(const char* input, const char* delim) {
-    const std::string s = to_string_safe(input);
-    const std::string d = to_string_safe(delim);
-    if (d.empty()) return copy_to_cstr("");
+souffle::RamDomain beforeLast(souffle::SymbolTable *symbolTable, souffle::RecordTable *, souffle::RamDomain input,
+                              souffle::RamDomain delim) {
+    const std::string &s = symbolTable->decode(input);
+    const std::string &d = symbolTable->decode(delim);
+    if (d.empty())
+        return symbolTable->encode("");
     size_t pos = s.rfind(d);
-    if (pos == std::string::npos) return copy_to_cstr("");
-    return copy_to_cstr(s.substr(0, pos));
+    if (pos == std::string::npos)
+        return symbolTable->encode("");
+    return symbolTable->encode(s.substr(0, pos));
 }
 
 char* afterLast(const char* input, const char* delim) {
@@ -379,26 +395,29 @@ char* afterLast(const char* input, const char* delim) {
     return copy_to_cstr(s.substr(pos + d.size()));
 }
 
-char* stripLiteralQuotes(const char* input) {
-    const std::string s = to_string_safe(input);
+souffle::RamDomain stripLiteralQuotes(souffle::SymbolTable *symbolTable, souffle::RecordTable *,
+                                      souffle::RamDomain input) {
+    const std::string &s = symbolTable->decode(input);
     if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
-        return copy_to_cstr(s.substr(1, s.size() - 2));
-    return copy_to_cstr("");
+        return symbolTable->encode(s.substr(1, s.size() - 2));
+    return symbolTable->encode("");
 }
 
 char* addLiteralQuotes(const char* input) {
     return copy_to_cstr("\"" + to_string_safe(input) + "\"");
 }
 
-char* stripTypedLiteral(const char* input, const char* datatype) {
-    const std::string s = to_string_safe(input);
-    const std::string dt = to_string_safe(datatype);
+souffle::RamDomain stripTypedLiteral(souffle::SymbolTable *symbolTable, souffle::RecordTable *,
+                                     souffle::RamDomain input, souffle::RamDomain datatype) {
+    const std::string &s = symbolTable->decode(input);
+    const std::string &dt = symbolTable->decode(datatype);
     const std::string suffix = "^^<" + dt + ">";
-    if (!ends_with_impl(s, suffix)) return copy_to_cstr("");
+    if (!ends_with_impl(s, suffix))
+        return symbolTable->encode("");
     std::string lit = s.substr(0, s.size() - suffix.size());
     if (lit.size() >= 2 && lit.front() == '"' && lit.back() == '"')
-        return copy_to_cstr(lit.substr(1, lit.size() - 2));
-    return copy_to_cstr("");
+        return symbolTable->encode(lit.substr(1, lit.size() - 2));
+    return symbolTable->encode("");
 }
 
 char* makeTypedLiteral(const char* lexical, const char* datatype) {

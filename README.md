@@ -184,6 +184,16 @@ To execute the Datalog programs:
 
 Please follow [https://souffle-lang.github.io/execute](https://souffle-lang.github.io/execute) for more execution options
 
+Build the library with headers from the same Soufflé build that loads it, and match `RAM_DOMAIN_SIZE` to the word size shown by `souffle --version`. Set `SOUFFLE_INCLUDE` to that build’s include directory and `SOUFFLE_WORD_SIZE` to its word size before running the commands below. The eight reverse string functions use the stateful interface, so their Datalog declarations must end with `stateful`. Regenerate reverse programs with the matching ReverseR2RML generator when building this library.
+
+The reverse function checks compare exact outputs and repeat calls with long strings while checking that the symbol table retains the same number of entries. Run them with AddressSanitizer and LeakSanitizer to check that memory is released when the table goes out of scope.
+
+```bash
+c++ -std=c++17 -I"$SOUFFLE_INCLUDE" -DRAM_DOMAIN_SIZE="$SOUFFLE_WORD_SIZE" -shared -fPIC functors.cpp -o libfunctors.so
+c++ -std=c++17 -I"$SOUFFLE_INCLUDE" -DRAM_DOMAIN_SIZE="$SOUFFLE_WORD_SIZE" -fsanitize=address,leak -g test/reverse_functors.cpp -o /tmp/reverse-functors-test
+ASAN_OPTIONS=detect_leaks=1 /tmp/reverse-functors-test
+```
+
 **Example**
 
 Running the Soufflé Datalog reasoner on the generated Datalog program and fact file from our [Example](#example) results in two csv files containing the output RDF triples and quadruples. For our example, the output is a single triple:

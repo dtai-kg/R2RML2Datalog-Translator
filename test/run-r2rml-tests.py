@@ -70,6 +70,8 @@ POSTGRES_CONTAINER = f"r2rml-tests-postgres-{os.getpid()}"
 DATABASE_NAME = "r2rml"
 DATABASE_PASSWORD = "r2rml-tests"
 MYSQL_UNTESTED_CASES = {"R2RMLTC0002f", "R2RMLTC0018a"}
+POSTGRES_SETUP_RETRIES = 10
+POSTGRES_SETUP_RETRY_DELAY_SECONDS = 1
 
 
 def normalize_rdf_row(line: str) -> str:
@@ -197,24 +199,42 @@ def load_postgres_database(script_path: Path, log_path: Path) -> bool:
         "--command",
         f"CREATE DATABASE {DATABASE_NAME};",
     ]
-    if not run_logged(reset_command, log_path):
-        return False
-    return run_logged(
-        [
-            "docker",
-            "exec",
-            "--interactive",
-            "--env",
-            f"PGPASSWORD={DATABASE_PASSWORD}",
-            POSTGRES_CONTAINER,
-            "psql",
-            "--username=postgres",
-            f"--dbname={DATABASE_NAME}",
-            "--set=ON_ERROR_STOP=1",
-        ],
-        log_path,
-        script_path.read_text(encoding="utf-8"),
+    load_command = [
+        "docker",
+        "exec",
+        "--interactive",
+        "--env",
+        f"PGPASSWORD={DATABASE_PASSWORD}",
+        POSTGRES_CONTAINER,
+        "psql",
+        "--username=postgres",
+        f"--dbname={DATABASE_NAME}",
+        "--set=ON_ERROR_STOP=1",
+    ]
+    script = script_path.read_text(encoding="utf-8")
+    transient_errors = (
+        "terminating connection due to administrator command",
+        "the database system is shutting down",
+        "connection to server was lost",
+        "failed: no such file or directory",
     )
+
+    for attempt in range(POSTGRES_SETUP_RETRIES):
+        reset_ok = run_logged(reset_command, log_path)
+        load_ok = reset_ok and run_logged(load_command, log_path, script)
+        if load_ok:
+            return True
+
+        if attempt + 1 == POSTGRES_SETUP_RETRIES:
+            return False
+        try:
+            log_content = log_path.read_text(encoding="utf-8").lower()
+        except FileNotFoundError:
+            return False
+        if not any(error in log_content for error in transient_errors):
+            return False
+        time.sleep(POSTGRES_SETUP_RETRY_DELAY_SECONDS)
+    return False
 
 
 def remove_case_logs(case_directory: Path) -> None:
